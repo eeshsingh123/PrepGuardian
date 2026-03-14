@@ -1,16 +1,18 @@
 import json
+
+from google.adk.runners import Runner
 from google.adk.agents import SequentialAgent, ParallelAgent, LlmAgent
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from app.logger import logger
-
-session_service = InMemorySessionService()
-
 from app.prompts import (
     CONFIDENCE_AGENT_PROMPT,
     RADAR_AGENT_PROMPT,
     MARKET_GAP_AGENT_PROMPT,
     REPORT_COMPILER_PROMPT
 )
+
+
+session_service = InMemorySessionService()
 
 # Define Agents
 confidence_agent = LlmAgent(
@@ -74,9 +76,6 @@ def _parse_json_result(data_str: str) -> dict | None:
         return None
 
 async def run_insights_pipeline(user_id: str, session_id: str, candidate_profile: dict, raw_transcript: list[dict]):
-    """
-    Runs the full insight generation pipeline and returns the structured data and report text.
-    """
     # Create offline session for insights mapping keys appropriately
     session = await session_service.create_session(
         app_name="prepguardian_insights",
@@ -95,7 +94,6 @@ async def run_insights_pipeline(user_id: str, session_id: str, candidate_profile
     )
     
     try:
-        from google.adk.runners import Runner
         runner = Runner(
             app_name="prepguardian_insights",
             agent=insights_pipeline,

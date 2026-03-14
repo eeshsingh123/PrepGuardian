@@ -264,8 +264,6 @@ async def run_bidirectional_session(
         candidate_profile = {
             "name": user.name or "Candidate",
             "target_role": user.preferences or "Software Engineer",
-            "target_company": "Unknown",
-            "target_level": "Senior", # default or derived
             "years_experience": user.experience or "Not specified",
             "session_date": tracker.started_at.isoformat()
         }
@@ -274,7 +272,6 @@ async def run_bidirectional_session(
         insight_data = None
         if tracker.turns:
             logger.info("Running insight pipeline...")
-            from datetime import datetime, timezone
             insight_data = await run_insights_pipeline(
                 user_id=user_id,
                 session_id=session_id,
