@@ -57,6 +57,8 @@ class ConversationSummaryResponse(BaseModel):
     duration_seconds: int = 0
     turn_count: int = 0
     preview: str = ""
+    # Simple boolean flags or partial data could be added here if needed for icons on the list, 
+    # but to minimize payload, we'll keep the full data in the detailed response.
 
 
 class ConversationResponse(BaseModel):
@@ -69,3 +71,7 @@ class ConversationResponse(BaseModel):
     user_turn_count: int = 0
     agent_turn_count: int = 0
     turns: list[ConversationTurn] = []
+    confidence_data: dict | None = None
+    radar_data: dict | None = None
+    market_gap_data: dict | None = None
+    report_text: str | None = None

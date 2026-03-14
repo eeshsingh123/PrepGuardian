@@ -51,7 +51,7 @@ class ConversationTracker:
             "timestamp": datetime.now(timezone.utc),
         })
 
-    async def save(self):
+    async def save(self, confidence_data: dict | None = None, radar_data: dict | None = None, market_gap_data: dict | None = None, report_text: str | None = None):
         """
         Persists the accumulated conversation to MongoDB. Calculates metadata
         like duration, turn counts, and timestamps. Skips saving if no turns
@@ -78,6 +78,10 @@ class ConversationTracker:
             "user_turn_count": user_turn_count,
             "agent_turn_count": agent_turn_count,
             "turns": self.turns,
+            "confidence_data": confidence_data,
+            "radar_data": radar_data,
+            "market_gap_data": market_gap_data,
+            "report_text": report_text,
         }
 
         db = get_mongo_db()
@@ -166,4 +170,8 @@ async def get_conversation_by_session(session_id: str) -> ConversationResponse |
         user_turn_count=doc.get("user_turn_count", 0),
         agent_turn_count=doc.get("agent_turn_count", 0),
         turns=turns,
+        confidence_data=doc.get("confidence_data"),
+        radar_data=doc.get("radar_data"),
+        market_gap_data=doc.get("market_gap_data"),
+        report_text=doc.get("report_text"),
     )

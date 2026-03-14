@@ -19,6 +19,7 @@ from app.logger import logger
 from app.prompts import AGENT_DESCRIPTION, AGENT_INSTRUCTION
 from app.services.user_service import get_user
 from app.services.conversation_service import ConversationTracker
+from app.services.insight_service import run_insights_pipeline
 
 
 root_agent = Agent(
@@ -257,5 +258,38 @@ async def run_bidirectional_session(
                 logger.error(f"Task error for client {user_id}: {exc}")
     finally:
         live_request_queue.close()
-        await tracker.save()
+        
+        # Build candidate profile for insight pipeline
+        user = await get_user(user_id)
+        candidate_profile = {
+            "name": user.name or "Candidate",
+            "target_role": user.preferences or "Software Engineer",
+            "target_company": "Unknown",
+            "target_level": "Senior", # default or derived
+            "years_experience": user.experience or "Not specified",
+            "session_date": tracker.started_at.isoformat()
+        }
+        
+        # Run insight pipeline
+        insight_data = None
+        if tracker.turns:
+            logger.info("Running insight pipeline...")
+            from datetime import datetime, timezone
+            insight_data = await run_insights_pipeline(
+                user_id=user_id,
+                session_id=session_id,
+                candidate_profile=candidate_profile,
+                raw_transcript=tracker.turns
+            )
+            
+        if insight_data:
+            await tracker.save(
+                confidence_data=insight_data.get("confidence_data"),
+                radar_data=insight_data.get("radar_data"),
+                market_gap_data=insight_data.get("market_gap_data"),
+                report_text=insight_data.get("report_text")
+            )
+        else:
+            await tracker.save()
+            
         logger.info(f"Client {user_id} disconnected and queue closed.")
