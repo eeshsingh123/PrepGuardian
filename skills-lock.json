@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "516bd2154eb843a8240e43d5b285229129853114ad7075a5e141e1c08e408c84"
+    },
+    "google-adk-python": {
+      "source": "cnemri/google-genai-skills",
+      "sourceType": "github",
+      "computedHash": "38c410f6184b090b95cfa6e860ab0947bbc903ad269d451210aabfe0e4321ca6"
+    },
+    "google-genai-sdk-python": {
+      "source": "cnemri/google-genai-skills",
+      "sourceType": "github",
+      "computedHash": "69decef8c37d3a76813cb3f001b4374a5665efc343f03d1cdff1514f9de0c226"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "computedHash": "6337038fe1fe6bbe1b9f252ab678ee575859190bab6f0f246f4061824eb40875"
+    }
+  }
+}
