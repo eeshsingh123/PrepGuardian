@@ -63,7 +63,7 @@ export function Login({ isDarkMode }: LoginProps) {
               className={`w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors ${dark
                 ? 'bg-[#0a0a0a] border-gray-700 text-white focus:border-gray-500 placeholder-gray-600'
                 : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400 placeholder-gray-400'
-              }`}
+                }`}
               placeholder="Enter username"
             />
           </div>
@@ -82,7 +82,7 @@ export function Login({ isDarkMode }: LoginProps) {
               className={`w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors ${dark
                 ? 'bg-[#0a0a0a] border-gray-700 text-white focus:border-gray-500 placeholder-gray-600'
                 : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400 placeholder-gray-400'
-              }`}
+                }`}
               placeholder="Enter password"
             />
           </div>
@@ -98,7 +98,7 @@ export function Login({ isDarkMode }: LoginProps) {
             className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${dark
               ? 'bg-white text-black hover:bg-gray-200'
               : 'bg-black text-white hover:bg-gray-800'
-            }`}
+              }`}
           >
             {loading ? 'Please wait…' : (isSignup ? 'Sign Up' : 'Log In')}
           </button>

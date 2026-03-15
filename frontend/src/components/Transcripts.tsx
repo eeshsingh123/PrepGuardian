@@ -207,7 +207,7 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
   return (
     <div className="flex h-[calc(100vh-73px)] w-full">
       {/* Left Panel: Conversation List */}
-      <div className={`w-80 flex-shrink-0 border-r flex flex-col ${dark ? 'border-gray-800 bg-[#0a0a0a]' : 'border-gray-200 bg-gray-50'}`}>
+      <div className={`w-full md:w-80 flex-shrink-0 border-r flex flex-col ${dark ? 'border-gray-800 bg-[#0a0a0a]' : 'border-gray-200 bg-gray-50'} ${selectedSessionId ? 'hidden md:flex' : 'flex'}`}>
         <div className={`px-4 py-4 border-b ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
           <h2 className={`text-xs font-bold uppercase tracking-widest ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
             Session History
@@ -240,8 +240,8 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
               key={conv.session_id}
               onClick={() => setSelectedSessionId(conv.session_id)}
               className={`w-full text-left px-5 py-4 border-b transition-all duration-200 ${selectedSessionId === conv.session_id
-                  ? (dark ? 'bg-[#141414] border-l-4 border-l-sky-600 border-b-gray-800' : 'bg-white border-l-4 border-l-sky-600 border-b-gray-200 shadow-sm')
-                  : (dark ? 'border-l-4 border-l-transparent border-gray-800/50 hover:bg-[#1a1a1a]' : 'border-l-4 border-l-transparent border-gray-100 hover:bg-gray-100/50')
+                ? (dark ? 'bg-[#141414] border-l-4 border-l-sky-600 border-b-gray-800' : 'bg-white border-l-4 border-l-sky-600 border-b-gray-200 shadow-sm')
+                : (dark ? 'border-l-4 border-l-transparent border-gray-800/50 hover:bg-[#1a1a1a]' : 'border-l-4 border-l-transparent border-gray-100 hover:bg-gray-100/50')
                 }`}
             >
               <div className="flex items-center justify-between mb-2">
@@ -265,7 +265,7 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
       </div>
 
       {/* Right Panel: Content Viewer */}
-      <div className={`flex-1 flex flex-col overflow-hidden ${dark ? 'bg-[#0f0f0f]' : 'bg-white'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden ${dark ? 'bg-[#0f0f0f]' : 'bg-white'} ${!selectedSessionId ? 'hidden md:flex' : 'flex'}`}>
         {!selectedSessionId ? (
           <div className="flex-1 flex items-center justify-center">
             <div className={`text-center ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
@@ -288,7 +288,13 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
             </div>
           </div>
         ) : transcriptQuery.data ? (
-          <DashboardView conversation={transcriptQuery.data} isDarkMode={dark} user={user} selectedSessionId={selectedSessionId} />
+          <DashboardView 
+            conversation={transcriptQuery.data} 
+            isDarkMode={dark} 
+            user={user} 
+            selectedSessionId={selectedSessionId} 
+            onBack={() => setSelectedSessionId(null)}
+          />
         ) : null}
       </div>
     </div>
@@ -300,11 +306,13 @@ function DashboardView({
   isDarkMode,
   user,
   selectedSessionId,
+  onBack,
 }: {
   conversation: ConversationFull;
   isDarkMode: boolean;
   user: UserData | null | undefined;
   selectedSessionId: string | null;
+  onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'transcript' | 'insights' | 'report'>('insights');
   const dark = isDarkMode;
@@ -349,17 +357,26 @@ function DashboardView({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Dashboard Header & Tabs */}
-      <div className={`px-8 pt-6 pb-0 border-b ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
+      <div className={`px-4 sm:px-8 pt-6 pb-0 border-b ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-8">
           <div>
+            <div className="flex items-center gap-3 mb-4 md:hidden">
+              <button
+                onClick={onBack}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${dark ? 'bg-gray-800 text-gray-200 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+              >
+                ← Back to History
+              </button>
+            </div>
             <h1 className={`text-2xl font-semibold tracking-tight ${dark ? 'text-gray-100' : 'text-gray-900'}`}>
               Session Debrief
             </h1>
-            <p className={`text-sm mt-1.5 flex items-center gap-3 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <p className={`text-sm mt-1.5 flex flex-wrap items-center gap-2 sm:gap-3 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
               <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {formatDuration(conversation.duration_seconds)}</span>
-              <span>•</span>
+              <span className="hidden sm:inline">•</span>
               <span className="flex items-center gap-1.5"><MessageSquare className="w-3.5 h-3.5" /> {conversation.turn_count} turns</span>
-              <span>•</span>
+              <span className="hidden sm:inline">•</span>
               <span>{formatDate(conversation.started_at)}</span>
             </p>
           </div>
@@ -371,8 +388,8 @@ function DashboardView({
                 onClick={() => generateInsightsMutation.mutate()}
                 disabled={generateInsightsMutation.isPending}
                 className={`inline-flex min-h-11 items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap flex-1 lg:flex-none ${dark
-                    ? 'bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-                    : 'bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  ? 'bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                  : 'bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-50 disabled:cursor-not-allowed'
                   }`}
               >
                 {generateInsightsMutation.isPending ? (
@@ -412,18 +429,18 @@ function DashboardView({
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-8">
+        <div className="flex gap-4 sm:gap-8 overflow-x-auto scrollbar-hide">
           {[
-            { id: 'insights', label: 'Analysis Insights', icon: Activity },
-            { id: 'report', label: 'Session review', icon: FileText },
-            { id: 'transcript', label: 'Raw Transcript', icon: MessageSquare },
+            { id: 'insights', label: 'Analysis', icon: Activity },
+            { id: 'report', label: 'Review', icon: FileText },
+            { id: 'transcript', label: 'Transcript', icon: MessageSquare },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 pb-4 px-1 border-b-2 text-sm font-medium transition-colors ${activeTab === tab.id
-                  ? (dark ? 'border-sky-500 text-sky-400' : 'border-sky-600 text-sky-700')
-                  : (dark ? 'border-transparent text-gray-500 hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-800')
+              className={`flex items-center gap-2 pb-4 px-1 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${activeTab === tab.id
+                ? (dark ? 'border-sky-500 text-sky-400' : 'border-sky-600 text-sky-700')
+                : (dark ? 'border-transparent text-gray-500 hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-800')
                 }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -446,7 +463,7 @@ function DashboardView({
 function TranscriptTab({ conversation, isDarkMode }: { conversation: ConversationFull; isDarkMode: boolean }) {
   const dark = isDarkMode;
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-8 py-8 space-y-6 2xl:px-12">
+    <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-8 py-8 space-y-6 2xl:px-12">
       {conversation.turns.map((turn, index) => (
         <div key={`turn-${index}`} className={`flex gap-4 ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {turn.role === 'agent' && (
@@ -456,17 +473,17 @@ function TranscriptTab({ conversation, isDarkMode }: { conversation: Conversatio
           )}
 
           <div className={`max-w-[82%] 2xl:max-w-[86%] px-5 py-4 rounded-2xl text-[15px] leading-relaxed shadow-sm ${turn.role === 'user'
-              ? (dark
-                ? 'bg-blue-600/20 text-blue-50 border border-blue-500/30 rounded-tr-sm'
-                : 'bg-blue-50 text-blue-900 border border-blue-200 rounded-tr-sm')
-              : (dark
-                ? 'bg-[#1a1a1a] text-gray-200 border border-gray-800/80 rounded-tl-sm'
-                : 'bg-white text-gray-800 border border-gray-200 rounded-tl-sm')
+            ? (dark
+              ? 'bg-blue-600/20 text-blue-50 border border-blue-500/30 rounded-tr-sm'
+              : 'bg-blue-50 text-blue-900 border border-blue-200 rounded-tr-sm')
+            : (dark
+              ? 'bg-[#1a1a1a] text-gray-200 border border-gray-800/80 rounded-tl-sm'
+              : 'bg-white text-gray-800 border border-gray-200 rounded-tl-sm')
             }`}>
             <p className="whitespace-pre-wrap">{turn.text}</p>
             <span className={`block text-[11px] font-medium mt-2 tracking-wide uppercase ${turn.role === 'user'
-                ? (dark ? 'text-blue-400/60' : 'text-blue-500/70')
-                : (dark ? 'text-gray-500' : 'text-gray-400')
+              ? (dark ? 'text-blue-400/60' : 'text-blue-500/70')
+              : (dark ? 'text-gray-500' : 'text-gray-400')
               }`}>
               {formatTime(turn.timestamp)}
             </span>
@@ -500,10 +517,10 @@ function ReportTab({ conversation, isDarkMode }: { conversation: ConversationFul
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-8 py-10 pb-24">
+    <div className="max-w-7xl mx-auto px-4 sm:px-8 py-10 pb-24">
       <div className={`rounded-[28px] border shadow-sm overflow-hidden ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-200'}`}>
         <div className={`h-1.5 ${dark ? 'bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-400' : 'bg-gradient-to-r from-sky-600 via-blue-500 to-cyan-500'}`} />
-        <div className="px-8 py-8 sm:px-10 sm:py-10">
+        <div className="px-4 py-8 sm:px-10 sm:py-10">
           <div className="space-y-6">
             {reportBlocks.map((block, index) => {
               if (block.type === 'divider') {
@@ -632,11 +649,11 @@ function InsightsTab({ conversation, isDarkMode }: { conversation: ConversationF
   const tooltipText = dark ? "#e5e5e5" : "#171717";
 
   return (
-    <div className="max-w-7xl mx-auto px-8 py-10 space-y-12 pb-24">
+    <div className="max-w-7xl mx-auto px-4 sm:px-8 py-10 space-y-12 pb-24">
 
       {/* 1. Market Readiness Hero (If available) */}
       {market_gap_data && (
-        <div className={`rounded-3xl p-8 border shadow-sm ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
+        <div className={`rounded-3xl p-4 sm:p-8 border shadow-sm ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1">
               <p className={`text-sm font-bold tracking-widest uppercase mb-3 ${dark ? 'text-sky-400' : 'text-sky-600'}`}>
@@ -647,9 +664,9 @@ function InsightsTab({ conversation, isDarkMode }: { conversation: ConversationF
               </h2>
               <div className="flex flex-wrap items-center gap-3 mb-6">
                 <span className={`px-3 py-1 text-xs font-semibold rounded-full uppercase tracking-wider ${market_gap_data.readiness_percentage >= 85 ? (dark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-700') :
-                    market_gap_data.readiness_percentage >= 70 ? (dark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700') :
-                      market_gap_data.readiness_percentage >= 55 ? (dark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700') :
-                        (dark ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-700')
+                  market_gap_data.readiness_percentage >= 70 ? (dark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700') :
+                    market_gap_data.readiness_percentage >= 55 ? (dark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700') :
+                      (dark ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-700')
                   }`}>
                   {market_gap_data.readiness_label}
                 </span>
@@ -694,7 +711,7 @@ function InsightsTab({ conversation, isDarkMode }: { conversation: ConversationF
 
         {/* 2. Concept Radar */}
         {radar_data && (
-          <div className={`rounded-3xl p-8 border shadow-sm flex flex-col ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
+          <div className={`rounded-3xl p-4 sm:p-8 border shadow-sm flex flex-col ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
             <h3 className={`text-lg font-semibold mb-6 ${dark ? 'text-gray-100' : 'text-gray-900'}`}>Concept Coverage</h3>
 
             <div className="flex-1 w-full flex items-center justify-center min-h-[350px] -mt-4">
@@ -737,15 +754,15 @@ function InsightsTab({ conversation, isDarkMode }: { conversation: ConversationF
 
         {/* 3. Confidence Map */}
         {confidence_data && (
-          <div className={`rounded-3xl p-8 border shadow-sm flex flex-col ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
+          <div className={`rounded-3xl p-4 sm:p-8 border shadow-sm flex flex-col ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
             <div className="flex justify-between items-start mb-8">
               <div>
                 <h3 className={`text-lg font-semibold mb-1 ${dark ? 'text-gray-100' : 'text-gray-900'}`}>Confidence Map</h3>
                 <p className={`text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Turn-by-turn evaluation of delivery.</p>
               </div>
               <div className={`px-4 py-2 rounded-full border text-sm font-semibold flex flex-col items-center ${confidence_data.average_score >= 7 ? (dark ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700') :
-                  confidence_data.average_score >= 5 ? (dark ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700') :
-                    (dark ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-200 text-red-700')
+                confidence_data.average_score >= 5 ? (dark ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700') :
+                  (dark ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-red-50 border-red-200 text-red-700')
                 }`}>
                 <span>{confidence_data.average_score} avg</span>
                 <span className="text-[10px] uppercase opacity-70 tracking-widest">{confidence_data.trend}</span>
