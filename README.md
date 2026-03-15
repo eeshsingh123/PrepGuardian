@@ -16,32 +16,32 @@ PrepGuardian operates in a continuous, low-latency loop that bridges the gap bet
 ## ✨ What PrepGuardian Does Well
 
 *   **Human-First Interaction**: Uses real-time voice and interruption-aware audio to make conversations feel natural and fluid.
-*   **Visual Awareness**: Through integrated screen sharing, the agent can guide users through complex software, codebases, or documents as if it were sitting right next to them.
-*   **Contextual Memory**: Every session builds upon the last. By storing and retrieving conversation histories, the agent maintains a persistent understanding of the user's progress.
+*   **Visual Awareness**: Through integrated screen sharing, users can have a collaborative learning experience simulating a real-world whiteboarding session.
 *   **Low Friction**: No complex setup. Start a session, share your goals, and get straight to work.
 
 ## 🛠️ Tech Stack
 
 ### AI & Core Engine
 *   **Google ADK**: For robust, streaming-first agent architecture.
-*   **Google GenAI (Gemini 2.0 Flash / Live)**: The brain behind the multi-modal reasoning.
+*   **Google Live API (Gemini 2.5 Flash Native audio)**: The brain behind the multi-modal reasoning.
+*   **Google AI (Gemini 3.1 pro & Gemini 3 flash)**: The models behind analysis & insights generation.
 *   **Antigravity IDE**: The primary development environment used to build this entire stack.
 
-### Backend (The Backbone)
+### Backend
 *   **FastAPI**: For high-performance, asynchronous API endpoints.
 *   **Python 3.14**: Utilizing the latest language features for speed and reliability.
 *   **UV**: Used for lightning-fast dependency management and builds.
 *   **MongoDB (Motor)**: Async storage for user context and conversation transcripts.
 
-### Frontend (The Interface)
+### Frontend
 *   **React & Vite**: A modern, snappy user interface.
 *   **TanStack Query**: For efficient server-state management.
 *   **Tailwind CSS 4**: For a lean, high-fidelity design system.
 
 ## 🌍 Impact on the User
 
-PrepGuardian isn't just about answering questions; it's about **reducing the cognitive load** of learning. By providing a 24/7 "guardian" that understands both the verbal nuances and the visual context of a task, it enables:
+PrepGuardian isn't just about answering questions; it's about **familiarizing with the real world scenarios** of learning & interviews. By providing a 24/7 "guardian" that understands both the verbal nuances and the visual context of a task, it enables:
 
 *   **Faster Mastery**: Real-time correction and guidance during active work.
-*   **Increased Confidence**: A safe, intelligent space to practice interviews or presentations.
+*   **Increased Confidence**: A safe, intelligent space to practice interviews or sessions.
 *   **Personalization at Scale**: An AI that actually knows you, your history, and your specific hurdles.
