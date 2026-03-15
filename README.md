@@ -38,6 +38,61 @@ PrepGuardian operates in a continuous, low-latency loop that bridges the gap bet
 *   **TanStack Query**: For efficient server-state management.
 *   **Tailwind CSS 4**: For a lean, high-fidelity design system.
 
+---
+
+## 🏁 Getting Started
+
+Follow these instructions to get the project up and running on your local machine.
+
+### Prerequisites
+
+*   [Python 3.14+](https://www.python.org/)
+*   [UV](https://github.com/astral-sh/uv) (Fast Python package manager)
+*   [Node.js](https://nodejs.org/) (LTS recommended)
+*   [MongoDB](https://www.mongodb.com/try/download/community) (Running locally or a cloud URI)
+
+### 1. 📂 Clone the Repository
+
+```bash
+git clone https://github.com/eeshsingh123/PrepGuardian.git
+cd PrepGuardian
+```
+
+### 2. ⚙️ Backend Setup
+
+```bash
+cd backend
+
+# 1. Install dependencies and create venv using uv
+uv sync
+
+# 2. Configure Environment Variables
+# Create a .env file in the backend directory with:
+# MONGO_URI="mongodb://localhost:27017"
+# GOOGLE_CLOUD_PROJECT="your-project-id"
+
+# 3. Spin up the server
+uv run uvicorn main:app --reload
+```
+
+### 3. 🎨 Frontend Setup
+
+```bash
+cd ../frontend
+
+# 1. Install dependencies
+npm install
+
+# 2. Configure Environment Variables
+# Create a .env file in the frontend directory with:
+# VITE_API_BASE_URL=http://127.0.0.1:8000
+
+# 3. Start the development server
+npm run dev
+```
+
+---
+
 ## 🌍 Impact on the User
 
 PrepGuardian isn't just about answering questions; it's about **familiarizing with the real world scenarios** of learning & interviews. By providing a 24/7 "guardian" that understands both the verbal nuances and the visual context of a task, it enables:
