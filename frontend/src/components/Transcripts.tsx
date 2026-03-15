@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { MessageSquare, Clock, User, Bot, Download, FileText, Activity, AlertTriangle } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { MessageSquare, Clock, User, Bot, Download, FileText, Activity, AlertTriangle, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart,
@@ -8,8 +9,8 @@ import {
   BarChart, Bar, Cell
 } from 'recharts';
 import { useAuth } from '../lib/auth';
-import { fetchConversations, fetchConversation } from '../lib/api';
-import type { ConversationSummary, ConversationFull } from '../lib/api';
+import { fetchConversations, fetchConversation, generateInsights } from '../lib/api';
+import type { ConversationSummary, ConversationFull, UserData } from '../lib/api';
 
 interface TranscriptsProps {
   isDarkMode: boolean;
@@ -98,7 +99,7 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
               onClick={() => setSelectedSessionId(conv.session_id)}
               className={`w-full text-left px-5 py-4 border-b transition-all duration-200 ${
                 selectedSessionId === conv.session_id
-                  ? (dark ? 'bg-[#141414] border-l-4 border-l-purple-500 border-b-gray-800' : 'bg-white border-l-4 border-l-purple-500 border-b-gray-200 shadow-sm')
+                  ? (dark ? 'bg-[#141414] border-l-4 border-l-sky-600 border-b-gray-800' : 'bg-white border-l-4 border-l-sky-600 border-b-gray-200 shadow-sm')
                   : (dark ? 'border-l-4 border-l-transparent border-gray-800/50 hover:bg-[#1a1a1a]' : 'border-l-4 border-l-transparent border-gray-100 hover:bg-gray-100/50')
               }`}
             >
@@ -134,7 +135,7 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
           </div>
         ) : transcriptQuery.isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
-            <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin"></div>
+            <div className="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin"></div>
             <p className={`text-sm font-medium ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Loading session data...</p>
           </div>
         ) : transcriptQuery.isError ? (
@@ -146,16 +147,38 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
             </div>
           </div>
         ) : transcriptQuery.data ? (
-          <DashboardView conversation={transcriptQuery.data} isDarkMode={dark} />
+          <DashboardView conversation={transcriptQuery.data} isDarkMode={dark} user={user} selectedSessionId={selectedSessionId} />
         ) : null}
       </div>
     </div>
   );
 }
 
-function DashboardView({ conversation, isDarkMode }: { conversation: ConversationFull; isDarkMode: boolean }) {
+function DashboardView({
+  conversation,
+  isDarkMode,
+  user,
+  selectedSessionId,
+}: {
+  conversation: ConversationFull;
+  isDarkMode: boolean;
+  user: UserData | null | undefined;
+  selectedSessionId: string | null;
+}) {
   const [activeTab, setActiveTab] = useState<'transcript' | 'insights' | 'report'>('insights');
   const dark = isDarkMode;
+  const queryClient = useQueryClient();
+  const generateInsightsMutation = useMutation({
+    mutationFn: () => generateInsights(user!.user_id, conversation.session_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transcript', selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations', user?.user_id] });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Insight generation failed. Please try again.';
+      toast.error(message);
+    },
+  });
 
   const downloadTranscript = () => {
     let content = `Transcript: ${formatDate(conversation.started_at)}\n\n`;
@@ -200,7 +223,31 @@ function DashboardView({ conversation, isDarkMode }: { conversation: Conversatio
             </p>
           </div>
           
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 items-center">
+            {user && (
+              <button
+                id={`generate-insights-${conversation.session_id}`}
+                onClick={() => generateInsightsMutation.mutate()}
+                disabled={generateInsightsMutation.isPending}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  dark
+                    ? 'bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                    : 'bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+              >
+                {generateInsightsMutation.isPending ? (
+                  <>
+                    <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Generate Insights
+                  </>
+                )}
+              </button>
+            )}
             <button
               id={`dl-txt-${conversation.session_id}`}
               onClick={downloadTranscript}
@@ -216,7 +263,7 @@ function DashboardView({ conversation, isDarkMode }: { conversation: Conversatio
                 id={`dl-md-${conversation.session_id}`}
                 onClick={downloadReport}
                 className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  dark ? 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30' : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                  dark ? 'bg-sky-600/20 text-sky-400 hover:bg-sky-600/30' : 'bg-sky-50 text-sky-700 hover:bg-sky-100'
                 }`}
               >
                 <FileText className="w-4 h-4" />
@@ -238,7 +285,7 @@ function DashboardView({ conversation, isDarkMode }: { conversation: Conversatio
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex items-center gap-2 pb-4 px-1 border-b-2 text-sm font-medium transition-colors ${
                 activeTab === tab.id
-                  ? (dark ? 'border-purple-500 text-purple-400' : 'border-purple-600 text-purple-700')
+                  ? (dark ? 'border-sky-500 text-sky-400' : 'border-sky-600 text-sky-700')
                   : (dark ? 'border-transparent text-gray-500 hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-800')
               }`}
             >
@@ -266,7 +313,7 @@ function TranscriptTab({ conversation, isDarkMode }: { conversation: Conversatio
       {conversation.turns.map((turn, index) => (
         <div key={`turn-${index}`} className={`flex gap-4 ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {turn.role === 'agent' && (
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-1 shadow-sm ${dark ? 'bg-gradient-to-br from-purple-500/20 to-indigo-500/10 text-purple-400 border border-purple-500/20' : 'bg-gradient-to-br from-purple-100 to-indigo-50 text-purple-700 border border-purple-200'}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-1 shadow-sm ${dark ? 'bg-gradient-to-br from-sky-500/20 to-blue-500/10 text-sky-400 border border-sky-500/20' : 'bg-gradient-to-br from-sky-100 to-blue-50 text-sky-700 border border-sky-200'}`}>
               <Bot className="w-5 h-5" />
             </div>
           )}
@@ -356,7 +403,7 @@ function InsightsTab({ conversation, isDarkMode }: { conversation: ConversationF
         <div className={`rounded-3xl p-8 border shadow-sm ${dark ? 'bg-[#141414] border-gray-800' : 'bg-white border-gray-100'}`}>
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1">
-              <p className={`text-sm font-bold tracking-widest uppercase mb-3 ${dark ? 'text-purple-400' : 'text-purple-600'}`}>
+              <p className={`text-sm font-bold tracking-widest uppercase mb-3 ${dark ? 'text-sky-400' : 'text-sky-600'}`}>
                 Readiness Evaluation
               </p>
               <h2 className={`text-4xl sm:text-5xl font-extrabold tracking-tight mb-4 ${dark ? 'text-white' : 'text-gray-900'}`}>

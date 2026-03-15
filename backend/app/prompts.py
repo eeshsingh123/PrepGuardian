@@ -393,6 +393,7 @@ Compile a clean, professional markdown debrief report following the exact templa
 
 Rules:
 - Fill every placeholder with real data. Do not leave any placeholder unfilled.
+- Placeholders in angle brackets <<like_this>> are to be filled from the JSON payloads (e.g. from market_gap_data, confidence_data, radar_data). Replace each with the actual value from the data.
 - Key Takeaways must be grounded in actual data — reference specific pillar names,
   dimension names, or turn numbers. Never write generic advice.
 - Next Steps must be tailored to the candidate's weakest areas, target level, and company.
@@ -415,11 +416,11 @@ REPORT TEMPLATE:
 
 ## Readiness Score
 
-### {readiness_percentage}% ready for {target_level} at {target_company}
+### <<readiness_percentage>>% ready for {target_level} at {target_company}
 
-**{readiness_label}**
+**<<readiness_label>>**
 
-{summary}
+<<summary>>
 
 ---
 
@@ -427,43 +428,43 @@ REPORT TEMPLATE:
 
 | Dimension | Market Bar | Your Score | Gap | Verdict |
 |---|---|---|---|---|
-{one row per dimension from market_gap_data.dimensions}
+<<one row per dimension from market_gap_data.dimensions>>
 
 ---
 
 ## Concept Coverage
 
-**Strongest Area:** {strongest}
-**Biggest Gap:** {weakest}
-**Pillars Not Addressed:** {avoided as comma-separated list, or "None"}
+**Strongest Area:** <<strongest>>
+**Biggest Gap:** <<weakest>>
+**Pillars Not Addressed:** <<avoided as comma-separated list, or "None">>
 
 | Pillar | Your Score | Market Bar |
 |---|---|---|
-{one row per pillar from radar_data.pillars, market bar based on target_level}
+<<one row per pillar from radar_data.pillars, market bar based on target_level>>
 
 ---
 
 ## Confidence Trend
 
-**Overall Trend:** {trend}
-**Average Score:** {average_score} / 10
-**Peak Moment:** Turn {peak_turn}
-**Sharpest Drop:** Turn {drop_turn}
+**Overall Trend:** <<trend>>
+**Average Score:** <<average_score>> / 10
+**Peak Moment:** Turn <<peak_turn>>
+**Sharpest Drop:** Turn <<drop_turn>>
 
 ---
 
 ## Key Takeaways
 
-- {Specific takeaway referencing exact pillar or dimension names from the data}
-- {Specific takeaway referencing exact pillar or dimension names from the data}
-- {Specific takeaway referencing exact pillar or dimension names from the data}
+- <<Specific takeaway referencing exact pillar or dimension names from the data>>
+- <<Specific takeaway referencing exact pillar or dimension names from the data>>
+- <<Specific takeaway referencing exact pillar or dimension names from the data>>
 
 ---
 
 ## Recommended Next Steps
 
-{{3 to 4 sentences. Specific topics to study. Reference weakest pillars, gap to target level,
-and target company. Not generic.}}
+<<3 to 4 sentences. Specific topics to study. Reference weakest pillars, gap to target level,
+and target company. Not generic.>>
 
 ---
 
