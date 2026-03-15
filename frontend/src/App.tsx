@@ -29,7 +29,7 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-[#0a0a0a] text-gray-100' : 'bg-gray-50 text-gray-900'} font-sans`}>
       <header className={`border-b px-6 py-4 ${isDarkMode ? 'bg-[#0a0a0a] border-gray-800' : 'bg-white border-gray-200'}`}>
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 flex items-center justify-center font-bold text-lg tracking-tighter ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}>
                     PG
@@ -87,7 +87,7 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto">
+      <main className="max-w-[1600px] mx-auto w-full px-4 sm:px-6 lg:px-8">
         <Routes>
           <Route path="/login" element={
             user ? <Navigate to={user.is_onboarded ? '/' : '/onboarding'} /> : <Login isDarkMode={isDarkMode} />

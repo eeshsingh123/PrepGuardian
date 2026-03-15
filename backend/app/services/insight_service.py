@@ -5,7 +5,6 @@ from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.genai.types import Content, Part
-from pydantic import BaseModel, Field
 
 from app.logger import logger
 from app.prompts import (
@@ -14,54 +13,7 @@ from app.prompts import (
     RADAR_AGENT_PROMPT,
     REPORT_COMPILER_PROMPT,
 )
-
-
-class CandidateProfile(BaseModel):
-    name: str
-    target_role: str
-    target_company: str
-    target_level: str
-    years_experience: str
-    session_date: str
-
-
-class ConfidenceScore(BaseModel):
-    turn: int
-    score: float
-    note: str
-
-
-class ConfidenceData(BaseModel):
-    scores: list[ConfidenceScore]
-    peak_turn: int
-    drop_turn: int
-    average_score: float
-    trend: str
-
-
-class RadarData(BaseModel):
-    pillars: dict[str, float]
-    strongest: str
-    weakest: str
-    avoided: list[str] = Field(default_factory=list)
-
-
-class MarketGapDimension(BaseModel):
-    name: str
-    market_bar: float
-    candidate_score: float
-    gap: float
-    verdict: str
-
-
-class MarketGapData(BaseModel):
-    target_role: str
-    target_company: str
-    target_level: str
-    dimensions: list[MarketGapDimension]
-    readiness_percentage: int
-    readiness_label: str
-    summary: str
+from app.schemas import CandidateProfile, ConfidenceData, MarketGapData, RadarData
 
 
 session_service = InMemorySessionService()
@@ -114,7 +66,7 @@ insights_pipeline = SequentialAgent(
 )
 
 
-def _normalize_report_text(report_text: Any) -> str | None:
+def normalize_report_text(report_text: Any) -> str | None:
     if not isinstance(report_text, str):
         return None
 
@@ -130,7 +82,7 @@ def _normalize_report_text(report_text: Any) -> str | None:
     return clean_report or None
 
 
-def _state_dict_value(value: Any) -> dict[str, Any] | None:
+def get_state_dict_value(value: Any) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
@@ -189,10 +141,10 @@ async def run_insights_pipeline(
             )
             return None
 
-        confidence_data = _state_dict_value(refreshed_session.state.get("confidence_data"))
-        radar_data = _state_dict_value(refreshed_session.state.get("radar_data"))
-        market_gap_data = _state_dict_value(refreshed_session.state.get("market_gap_data"))
-        report_text = _normalize_report_text(refreshed_session.state.get("final_report"))
+        confidence_data = get_state_dict_value(refreshed_session.state.get("confidence_data"))
+        radar_data = get_state_dict_value(refreshed_session.state.get("radar_data"))
+        market_gap_data = get_state_dict_value(refreshed_session.state.get("market_gap_data"))
+        report_text = normalize_report_text(refreshed_session.state.get("final_report"))
 
         outputs = {
             "confidence_data": confidence_data,
