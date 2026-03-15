@@ -20,6 +20,9 @@ from app.prompts import AGENT_DESCRIPTION, AGENT_INSTRUCTION
 from app.services.user_service import get_user
 from app.services.conversation_service import ConversationTracker
 
+DEFAULT_TARGET_COMPANY = "Top Tech Company"
+DEFAULT_TARGET_LEVEL = "Mid-level"
+
 
 root_agent = Agent(
     name=settings.AGENT_NAME,
@@ -55,7 +58,9 @@ async def start_agent_session(user_id: str, session_id: str):
     user_state = {
         "user_name": user.name or "Not specified",
         "user_experience": user.experience or "Not specified",
-        "user_preferences": user.preferences or "Not specified"
+        "user_preferences": user.preferences or "Not specified",
+        "user_target_company": user.target_company or DEFAULT_TARGET_COMPANY,
+        "user_target_level": user.target_level or DEFAULT_TARGET_LEVEL,
     }
 
     session = await runner.session_service.get_session(

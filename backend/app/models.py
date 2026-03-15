@@ -17,6 +17,8 @@ class LoginRequest(BaseModel):
 class OnboardingRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     experience: str = Field(..., min_length=1, max_length=200)
+    target_company: str = Field(..., min_length=1, max_length=100)
+    target_level: str = Field(..., min_length=1, max_length=50)
     preferences: str = Field(..., max_length=2000)
 
 
@@ -31,6 +33,8 @@ class UserResponse(BaseModel):
     username: str
     name: str | None = None
     experience: str | None = None
+    target_company: str | None = None
+    target_level: str | None = None
     preferences: str | None = None
     is_onboarded: bool = False
     created_at: datetime
@@ -57,6 +61,8 @@ class ConversationSummaryResponse(BaseModel):
     duration_seconds: int = 0
     turn_count: int = 0
     preview: str = ""
+    # Simple boolean flags or partial data could be added here if needed for icons on the list, 
+    # but to minimize payload, we'll keep the full data in the detailed response.
 
 
 class ConversationResponse(BaseModel):
@@ -69,3 +75,7 @@ class ConversationResponse(BaseModel):
     user_turn_count: int = 0
     agent_turn_count: int = 0
     turns: list[ConversationTurn] = []
+    confidence_data: dict | None = None
+    radar_data: dict | None = None
+    market_gap_data: dict | None = None
+    report_text: str | None = None

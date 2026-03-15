@@ -51,7 +51,7 @@ class ConversationTracker:
             "timestamp": datetime.now(timezone.utc),
         })
 
-    async def save(self):
+    async def save(self, confidence_data: dict | None = None, radar_data: dict | None = None, market_gap_data: dict | None = None, report_text: str | None = None):
         """
         Persists the accumulated conversation to MongoDB. Calculates metadata
         like duration, turn counts, and timestamps. Skips saving if no turns
@@ -78,6 +78,10 @@ class ConversationTracker:
             "user_turn_count": user_turn_count,
             "agent_turn_count": agent_turn_count,
             "turns": self.turns,
+            "confidence_data": confidence_data,
+            "radar_data": radar_data,
+            "market_gap_data": market_gap_data,
+            "report_text": report_text,
         }
 
         db = get_mongo_db()
@@ -166,4 +170,44 @@ async def get_conversation_by_session(session_id: str) -> ConversationResponse |
         user_turn_count=doc.get("user_turn_count", 0),
         agent_turn_count=doc.get("agent_turn_count", 0),
         turns=turns,
+        confidence_data=doc.get("confidence_data"),
+        radar_data=doc.get("radar_data"),
+        market_gap_data=doc.get("market_gap_data"),
+        report_text=doc.get("report_text"),
     )
+
+
+async def update_conversation_insights(
+    session_id: str,
+    *,
+    confidence_data: dict | None = None,
+    radar_data: dict | None = None,
+    market_gap_data: dict | None = None,
+    report_text: str | None = None,
+) -> bool:
+    """
+    Updates an existing conversation document with insight pipeline results.
+    Only the four insight fields are set; turns and metadata are unchanged.
+
+    Returns:
+        True if a document was matched and updated.
+    """
+    db = get_mongo_db()
+    update = {"$set": {}}
+    if confidence_data is not None:
+        update["$set"]["confidence_data"] = confidence_data
+    if radar_data is not None:
+        update["$set"]["radar_data"] = radar_data
+    if market_gap_data is not None:
+        update["$set"]["market_gap_data"] = market_gap_data
+    if report_text is not None:
+        update["$set"]["report_text"] = report_text
+    if not update["$set"]:
+        return False
+    result = await db.conversations.update_one(
+        {"session_id": session_id},
+        update,
+    )
+    if result.modified_count:
+        logger.info(f"Updated insights for session '{session_id}'.")
+    return result.modified_count > 0
