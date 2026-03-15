@@ -257,7 +257,5 @@ async def run_bidirectional_session(
                 logger.error(f"Task error for client {user_id}: {exc}")
     finally:
         live_request_queue.close()
-
         await tracker.save()
-
         logger.info(f"Client {user_id} disconnected and queue closed.")
