@@ -1,0 +1,212 @@
+Here's a list of prompts I have written/spoken to build this application from scratch.
+This will update per feature & per phase.
+This helps me understand how verbose I am & learn to get the best out of Agentic IDEs
+
+
+=========================================================================================================================================================================================================
+
+I plan to build a live System Design Learning Buddy where the AI agent that I build is equipped with all of the tools (web search, system design blogs, books, Youtube videos, etc.)  to become a senior bar raiser level mentor/interviewer with whom I can collaborate with on any whiteboard based interaction.
+My aim with this is to incrementally learn and build complex systems starting from absolute fundamentals while having rich, actionable feedbacks at the end of the process.
+This is something that I am actively learning as well. Therefore, having a live mentor/interviewer to practice and build confidence is my aim.
+
+My category is - Live Agent
+
+=========================================================================================================================================================================================================
+
+Phase 1 - building the infrastructure for the live agent
+Implemented through skills & rules
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Phase 2 - cleanup after phase 1 - DONE
+I want you to do the following.
+- Go over the backend folder and remove the files, functions, models, schemas that are not being used and just put there
+- Go over the backend-code-rules to see if the current code quality enforces those rules
+- Create and use all constants in and from config file only and use for ADK agent + elsewhere i see hard-coded constants in file.
+- In routes -> I only want the route logic to exist there, all helper function and ws setup functions should be correctly segregated into their own services folder and have a clear readable separation
+- insignificant comments and docstrings are not needed. Either include detailed docstrings or dont include them at all.
+- Ensure this cleanup does not break anything existing and the flow works as is - the flow has just started working and it is important and critical it does not break
+- treat this refactor as a production ready application refactor so the code has to maintain that standard.
+
+Phase 3 - Screen sharing support for agent + Context compression
+I want you to do the following carefully and with utmost precision
+- Refer the streaming part in the google-adk-python skill and understand deeply and correctly How to Use Audio, Image and Video and implement screen share capabilities to the agent - this is the part 5 of the streaming docs.
+- Refer the streaming part in the google-adk-python skill and understand deeply and correctly How to do the Live API Context Window Compression - this is in the part 4 of the streaming docs with a whole section with same name as Context  Window Compression.
+- I should be able to have long running conversations with the agent without interruption limits of 15 mins. Read the reason why we do the compression to understand better
+- Also look at Best Practices for Live API Connection and Session Management in the same skill section mentioned above
+- I want you to implement this functionality to our current agent in the backend folder. 
+- I should be able to share my screen from the UI and the agent should be able to see the screen and answer based on the content of the screen
+- It is very important that this implementation is correct and error free
+- Do not break anything existing - ensure the changes are clean optimal and readable
+- Follow the backend-code rule to not create slop in code and do not make a mess
+- ask clarifying questions if necessary
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+I am answering your questions that you asked in order
+
+1. Lets go with MongoDB - you are correct. Please provide the schema of the conversation and how it will be saved so that I can have a clear idea about it incase I need to debug and make my own analysis and insights
+2. add react-router-dom and do the frontend changes needed - but carefully - do not bloat. be concise and yet dont miss anything
+3. yes, lets rely on gemini's transcription accuracy and use what is available
+
+
+4. Okay this is important - This is critical step. Unique user ids for every new session defeats the purpose of userId insights and analysis for a particular user.
+lets do it this way - let me know if im incorrect or im missing something
+A. Create a simple login page (no need to deep authentication yet) that accepts userId and password as input and logs in/signs up a user. Once the user Signs up -> create a user entry into the DB (decide the schema and make sure it is minimal and clear) -> this will be our source of truth for userId.
+B. Create a simple onboarding page that collects user info like their name, experience and their preferences in a textArea box for now.
+C. Once user submits this -> Update our user document with these details to ensure everything is up to date. Keep it minimal
+D. Frontend will not generate userIds -> backend will be generating userIds and using it across for all sessions created by the user.
+E. New sessionId each new session is fine I guess, but we need to store this sessionId & userId along with transcript details.
+F. Create indexes on db for efficient retrieval & Add sorting as well for latest to oldest conversations.
+G. Do not break anything existing
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Phase 4 - transcripts & on-boarding
+Backend:
+- we already have bi-di conversations ready & working with the agent defined inside the @agent_service.py file. Here's what we'll be doing with it.
+- I want you to build the following for me
+1. Setup a local mongodb and a basic SQLite db configuration for my hackathon purpose. Ensure they are modular, segregated and defined in a clean readable manner and used across the entire project. 
+2. The DB directory structure should be minimal and to the point, Initialize once and use all across. Avoid redundant connections. production-ready implementation is the goal
+3. Now, I want you to save the conversation that has happened between the user and the agent into the db for detailed analysis. Lets work on an approach for this, tell me - will it be beneficial to use SQLite db here or mongodb to save turn by turn conversations and retrieve the conversation as a whole later for analysis? This is a critical step so be careful with decision
+4. The conversation can be stored into the db once the session ends - Keep track of turn wise conversation accurately having a clear distinction in User & Agent turns.
+5. Each conversation should be correctly identifiable
+	a. By sessionId - unique for each session
+	b. By userId - one user can have multiple sessions
+6. Build this keeping in mind - that we will be querying these conversations using sessionIds and users to understand and perform analysis. Think of everything you can do in terms of analyzing conversations and generating insights.
+
+Frontend:
+- Create a simple new page listing all the conversations the user has done on the left side as a clean list. 
+- When the user clicks on any of the conversation - It should show the transcript for now on the right side as an artifact. The conversation visible should be clean and User friendly
+- The artifact can have multiple tabs. One tab will be transcript, one will be analysis and one will be a chat tab - where user can have a text conversation with the AI LLM model and the model will have the entire transcript as context to provide detailed feedback
+
+
+Ask clarifying questions if necessary. Understand the tradeoff of DB choice to save conversations and let me know which one we should use for conversation saving. 
+We will be using mongodb as well for other purposes so keep that initialization as well.
+BE very careful with the changes and flow & make sure to not break anything existing. Clean, optimal code is the RULE. look at rules if needed
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+phase 5 - interruptions
+I want you to implement the following functionality
+So so currently when I'm talking to the agent and when the agent is responding back I am not able to interrupt the agent to have a live conversation
+I want you to implement interruption so that I Must be able to interrupt the agent while it is responding and ask my there itself
+I want you to refer ADK-python and in part-5 of the streaming section There is an audio section where interruption is explained
+Go over the part five of the section thoroughly and understand how interruption can be implemented in this case
+This is a very critical part of the process so be ensure to not make any mistakes Ask clarifying questions if needed and do not assume anything and do not break anything existing
+Ensure the changes are minimal refer the rules or skills if you need and make sure that the implementation is 100 percent correct
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+phase 6 - injecting user specific context into system prompt & Transcripts saving clean-up
+Look at the current agent instruction that I've updated
+I want to do the following for me as you know that we are already saving user onboarding information in the db The information is includes name & experience and important details as to what user wants.
+I want you to inject this information into the agent instruction so that each session created by the user feels very customized to the user and the agent knows who the user is
+I want to fully utilize the prompt caching as well so would you suggest putting this information at the top of the file or at the bottom of the file as a separate markdown session You can let me know what would be the best scenario here
+Since the onboarding information is dynamically injected I want you to check how instructions Contexts are added dynamically through the ADK skill
+
+Secondly,
+Here's what I also want you to fix
+Currently if I check the transcripts it is saving each and every single word given out by the agent individually and also the entire answer at the end. This is a bad user experience I don't want to save each and every token spit out by the agent in the DB and clutter it what I want you to do it's to save only the entire answer from the agent given a user Question and not individually store single words. 
+
+Finally,
+Here's the last part that I want you to implement as well.
+Currently there is no Way to identify if a session has ended and transcript screen do not update once the session conversation has ended.
+What I want you to do is have an end session button on the screen where when the user once click on that it should conclude that the conversation has ended and it should save the transcript and also when the user clicks on the transcript screen he should see that transcript saved already.
+Currently the transcripts saved are not visible and I have to close the app and start again to see them on the screen this should not be the case.
+It is important that the sessions can be Ended when the user clicks on the button
+
+
+This is a very critical part of the flow I want you to not break anything existing and ensure that the changes are optimal and clean.
+Do not assume anything and ask clarifying questions if needed
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+phase 7 - analysis & insight generation
+
+skills to refer:
+a. insight-generation & its references
+b. google-adk-python for adk docs and Agent orchestration understanding
+c. Frontend-design skill as well for updating frontend
+
+Here's what I want to do.
+Now we'll be building the actual part of the application that separates it from any commercial mainstream Agent and chatbot available everywhere
+what we Have right now are a list of transcripts of the conversations that happened between the user and the agent. It consists of turns taken & the whole extent of the conversation and the topics covered etc.
+You can check the structure of the conversation saved to get a clear idea of data structure
+This is what I want you to build - Insight generation Agents workflow pipeline. Very carefully. Very precisely and keeping the stake and importance of this change in mind
+1. You will be using Google ADK. (refer adk docs to understand how you can create multiple agents that work in a pipeline sequentially & parallelly)
+2. You are given a skill (insight-generation) that you will be looking into for this. It has everything you need and every little details about insight generation & review
+3. The objective is Take the transcript -> generate insights -> save the insights to db so that it can be retrieved
+
+4. Saving the insight data to mongodb and retrieving and displaying on the frontend is a crucial part. Ensure the data models are correct. insight-generation skill will help you
+5. We will be showing this insight on the transcripts screen.
+6. Lets utilize the whole screen now so keep the sidebar on the left end and use the main artifact space to render 1. Transcripts 2. the insights 3. A final markdown report (also given in the skill)
+7. Make it like a professional user friendly and a great dashboard with the best UX - refer frontend and UX skill. I am attaching an image for your reference as well.
+8. Create an option to allow user to export transcript & generated report markdown file. This will download these data points for external usage.
+
+This is a very critical part of the flow I want you to not break anything existing and ensure that the changes are optimal and clean.
+Do not assume anything and ask clarifying questions if needed
+I cannot emphasize on this more as this is a make or break for the application we are building. The stakes are high - keep in mind the rules and code clarity and error free nature of the code
+
+We will be using the Google ADK multiagent framework here where we can have a supervisor agent or some sort of an agent framework where one supervisor and multiple agents work in parallel and generates insights from it
+We need to have a review agent which will be the supervisor agent who will look at the insights and confirm that they are on par as per the transcript
+Inside generation can be a parallel process so two agents can work parallely to generate two different insights in total we will be generating 3 insights
+
+here are the insights information
+1. Confidence Map
+Track how the candidate's answer quality shifts as the interviewer increases difficulty. You can approximate this from response length, use of filler/hedge phrases ("I think", "maybe", "not sure but"), and whether the agent had to prompt them multiple times. Visualize it as a curve — where did they peak, where did they drop off. This is visually striking and deeply personal.
+2. Concept Coverage Radar
+A radar/spider chart showing which system design pillars they touched (scalability, storage, caching, APIs, etc.) vs. which ones they avoided or got redirected on. Candidates almost always have blind spots they don't notice themselves. Showing it as a shape makes the gap visceral.
+
+Solid supporting insights to round it out:
+
+Time-to-clarity — how many back-and-forth turns it took before they arrived at a structured answer. Fewer is better.
+Interviewer intervention rate — how often the agent had to nudge, hint, or redirect. A proxy for independence.
+Depth vs. breadth balance — did they go deep on one thing and skip everything else, or spread thin across the whole problem.
+Behavioral vs. technical ratio — if the session mixed both, how did they perform comparatively.
+
+3. Market vs. Reality Gap
+The idea is simple. For a given target role and level — say, Senior SWE - there is a known bar. You define that bar across the same dimensions you are already tracking, and then you overlay the candidate's actual performance on top of it.
+Here are the expectations to meet or exceed the bar
+What is Expected at Each Level?
+## Mid-level
+Breadth vs. Depth: A mid-level candidate will be mostly focused on breadth (80% vs 20%). You should be able to craft a high-level design that meets the functional requirements you've defined, but many of the components will be abstractions with which you only have surface-level familiarity.
+Probing the Basics: Your interviewer will spend some time probing the basics to confirm that you know what each component in your system does. For example, if you add an API Gateway, expect that they may ask you what it does and how it works (at a high level). In short, the interviewer is not taking anything for granted with respect to your knowledge.
+Mixture of Driving and Taking the Backseat: You should drive the early stages of the interview in particular, but the interviewer doesn’t expect that you are able to proactively recognize problems in your design with high precision. Because of this, it’s reasonable that they will take over and drive the later stages of the interview while probing your design.
+
+## Senior
+Depth of Expertise: As a senior candidate, expectations shift towards more in-depth knowledge — about 60% breadth and 40% depth. This means you should be able to go into technical details in areas where you have hands-on experience. It's crucial that you demonstrate a deep understanding of key concepts and technologies relevant to the task at hand.
+Advanced System Design: You should be familiar with advanced system design principles. For example, knowing how to utilize blob storage for large files, or how to implement a CDN for faster downloads. You should be able to discuss the trade-offs involved in different design choices and justify your decisions based on your experience.
+Articulating Architectural Decisions: You should be able to clearly articulate the pros and cons of different architectural choices, especially how they impact scalability, performance, and maintainability. You justify your decisions and explain the trade-offs involved in your design choices.
+Problem-Solving and Proactivity: You should demonstrate strong problem-solving skills and a proactive approach. This includes anticipating potential challenges in your designs and suggesting improvements. You need to be adept at identifying and addressing bottlenecks, optimizing performance, and ensuring system reliability.
+
+## Staff+
+Emphasis on Depth: As a staff+ candidate, the expectation is a deep dive into the nuances of system design — I'm looking for about 40% breadth and 60% depth in your understanding. This level is all about demonstrating that, while you may not have solved this particular problem before, you have solved enough problems in the real world to be able to confidently design a solution backed by your experience.
+You should know which technologies to use, not just in theory but in practice, and be able to draw from your past experiences to explain how they’d be applied to solve specific problems effectively. The interviewer knows you know the small stuff (REST API, data normalization, etc) so you can breeze through that at a high level so you have time to get into what is interesting.
+High Degree of Proactivity: At this level, an exceptional degree of proactivity is expected. You should be able to identify and solve issues independently, demonstrating a strong ability to recognize and address the core challenges in system design. This involves not just responding to problems as they arise but anticipating them and implementing preemptive solutions. Your interviewer should intervene only to focus, not to steer.
+Practical Application of Technology: You should be well-versed in the practical application of various technologies. Your experience should guide the conversation, showing a clear understanding of how different tools and systems can be configured in real-world scenarios to meet specific requirements.
+Complex Problem-Solving and Decision-Making: Your problem-solving skills should be top-notch. This means not only being able to tackle complex technical challenges but also making informed decisions that consider various factors such as scalability, performance, reliability, and maintenance.
+Advanced System Design and Scalability: Your approach to system design should be advanced, focusing on scalability and reliability, especially under high load conditions. This includes a thorough understanding of distributed systems, load balancing, caching strategies, and other advanced concepts necessary for building robust, scalable systems.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Currently the only way Insights are triggered is after the session ends. 
+Can you do the following for me
+in the transcripts screen - can you add a button next to download transcript section that says "Generate Insights" ? This way when the user clicks on that button
+We should take the transcript from the db that we already have and save - and run the insight generation pipeline. 
+
+The main objective is that the user should be able to generate insights on demand
+
+Remove the insight generation at the end of the session - we dont need that anymore
+
+This is a very critical part of the flow I want you to not break anything existing and ensure that the changes are optimal and clean.
+Do not assume anything and ask clarifying questions if needed
+
+------------------------------------------------------------------------
+
+Okay, Here's the change I want you to do for me
+Currently we're not asking the target level and target company at the onboarding process step. Can you please add these two sections as well gracefully in the form so that user can provide this information and it can be saved in the user database
+because if you check conversations.py file target_company and target_level are hardcoded. I want it to come from `user` as well. 
+If it is not available it can be defaulted to some value but it should come from user first
+Be very careful with this change as you are changing front end onboarding and back end as well make sure to not break anything existing and ask questions if needed
+
+In summary I want target company and target level to be part of the onboarding process and be used in the back end for generating insights And also to be passed to the model as context
+Because in AGENT_INSTRUCTION also, we dont use it. so it can be taken from user inside start_agent_session and passed as user_state. keep it with (?) as others to not break the context var
