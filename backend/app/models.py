@@ -17,6 +17,8 @@ class LoginRequest(BaseModel):
 class OnboardingRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     experience: str = Field(..., min_length=1, max_length=200)
+    target_company: str = Field(..., min_length=1, max_length=100)
+    target_level: str = Field(..., min_length=1, max_length=50)
     preferences: str = Field(..., max_length=2000)
 
 
@@ -31,6 +33,8 @@ class UserResponse(BaseModel):
     username: str
     name: str | None = None
     experience: str | None = None
+    target_company: str | None = None
+    target_level: str | None = None
     preferences: str | None = None
     is_onboarded: bool = False
     created_at: datetime

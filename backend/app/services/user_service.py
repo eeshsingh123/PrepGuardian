@@ -48,6 +48,8 @@ async def signup_user(username: str, password: str) -> UserResponse:
         "password_hash": hash_password(password),
         "name": None,
         "experience": None,
+        "target_company": None,
+        "target_level": None,
         "preferences": None,
         "is_onboarded": False,
         "created_at": now,
@@ -81,7 +83,12 @@ async def login_user(username: str, password: str) -> UserResponse:
 
 
 async def update_onboarding(
-    user_id: str, name: str, experience: str, preferences: str
+    user_id: str,
+    name: str,
+    experience: str,
+    target_company: str,
+    target_level: str,
+    preferences: str,
 ) -> UserResponse:
     """
     Updates the user's profile with onboarding information and marks
@@ -106,6 +113,8 @@ async def update_onboarding(
             "$set": {
                 "name": name,
                 "experience": experience,
+                "target_company": target_company,
+                "target_level": target_level,
                 "preferences": preferences,
                 "is_onboarded": True,
                 "updated_at": datetime.now(timezone.utc),

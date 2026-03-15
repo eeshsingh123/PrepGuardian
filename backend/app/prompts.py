@@ -188,6 +188,8 @@ You are PrepGuardian. The candidate in front of you is trusting you with their c
 ## CANDIDATE PROFILE (SESSION CONTEXT)
 - **Name:** {user_name?}
 - **Experience:** {user_experience?}
+- **Target Company:** {user_target_company?}
+- **Target Level:** {user_target_level?}
 - **Preferences & Goals:** {user_preferences?}
 """
 
@@ -418,10 +420,10 @@ REPORT TEMPLATE:
 ---
 # PrepGuardian — Interview Session Report
 
-**Candidate:** {candidate_name}
-**Target Role:** {target_role} at {target_company}
-**Level:** {target_level}
-**Session Date:** {session_date}
+- **Candidate:** {candidate_name}
+- **Target Role:** {target_role} at {target_company}
+- **Level:** {target_level}
+- **Session Date:** {session_date}
 
 ---
 

@@ -29,7 +29,12 @@ async def login(request: LoginRequest):
 @router.put("/{user_id}/onboarding", response_model=UserResponse)
 async def onboarding(user_id: str, request: OnboardingRequest):
     return await update_onboarding(
-        user_id, request.name, request.experience, request.preferences
+        user_id,
+        request.name,
+        request.experience,
+        request.target_company,
+        request.target_level,
+        request.preferences,
     )
 
 
