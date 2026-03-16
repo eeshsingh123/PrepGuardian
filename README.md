@@ -93,10 +93,6 @@ npm run dev
 
 ---
 
-## 🌍 Impact on the User
+## 🏗️ Architecture
 
-PrepGuardian isn't just about answering questions; it's about **familiarizing with the real world scenarios** of learning & interviews. By providing a 24/7 "guardian" that understands both the verbal nuances and the visual context of a task, it enables:
-
-*   **Faster Mastery**: Real-time correction and guidance during active work.
-*   **Increased Confidence**: A safe, intelligent space to practice interviews or sessions.
-*   **Personalization at Scale**: An AI that actually knows you, your history, and your specific hurdles.
+![PrepGuardian Architecture](./prepGuardian_architecture.png)
