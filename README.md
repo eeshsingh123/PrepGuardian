@@ -67,9 +67,9 @@ cd backend
 uv sync
 
 # 2. Configure Environment Variables
-# Create a .env file in the backend directory with:
-# MONGO_URI="mongodb://localhost:27017"
-# GOOGLE_CLOUD_PROJECT="your-project-id"
+# Create a .env file in the backend directory OR update \backend\app\config.py with:
+MONGO_URI="mongodb://localhost:27017"
+GOOGLE_CLOUD_PROJECT="your-project-id"
 
 # 3. Spin up the server
 uv run uvicorn main:app --reload
