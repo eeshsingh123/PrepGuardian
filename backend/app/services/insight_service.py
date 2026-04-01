@@ -6,6 +6,7 @@ from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.genai.types import Content, Part
 
+from app.constants import AppConstants, ModelConstants
 from app.logger import logger
 from app.prompts import (
     CONFIDENCE_AGENT_PROMPT,
@@ -21,7 +22,7 @@ session_service = InMemorySessionService()
 # Define Agents
 confidence_agent = LlmAgent(
     name="ConfidenceMapAgent",
-    model="gemini-2.5-pro",
+    model=ModelConstants.INSIGHT_PRO_MODEL,
     instruction=CONFIDENCE_AGENT_PROMPT,
     output_schema=ConfidenceData,
     output_key="confidence_data"
@@ -29,7 +30,7 @@ confidence_agent = LlmAgent(
 
 radar_agent = LlmAgent(
     name="ConceptRadarAgent",
-    model="gemini-2.5-flash",
+    model=ModelConstants.INSIGHT_FLASH_MODEL,
     instruction=RADAR_AGENT_PROMPT,
     output_schema=RadarData,
     output_key="radar_data"
@@ -37,7 +38,7 @@ radar_agent = LlmAgent(
 
 market_gap_agent = LlmAgent(
     name="MarketGapAgent",
-    model="gemini-2.5-pro",
+    model=ModelConstants.INSIGHT_PRO_MODEL,
     instruction=MARKET_GAP_AGENT_PROMPT,
     output_schema=MarketGapData,
     output_key="market_gap_data"
@@ -45,7 +46,7 @@ market_gap_agent = LlmAgent(
 
 report_agent = LlmAgent(
     name="ReportCompilerAgent",
-    model="gemini-2.5-flash",
+    model=ModelConstants.INSIGHT_FLASH_MODEL,
     instruction=REPORT_COMPILER_PROMPT,
     output_key="final_report"
 )
@@ -97,7 +98,7 @@ async def run_insights_pipeline(
 
         # Create an isolated offline session for the insight workflow.
         session = await session_service.create_session(
-            app_name="prepguardian_insights",
+            app_name=AppConstants.INSIGHTS_APP_NAME,
             user_id=user_id,
             session_id=session_id + "_insights",
             state={
@@ -112,7 +113,7 @@ async def run_insights_pipeline(
         )
 
         runner = Runner(
-            app_name="prepguardian_insights",
+            app_name=AppConstants.INSIGHTS_APP_NAME,
             agent=insights_pipeline,
             session_service=session_service,
         )
@@ -130,7 +131,7 @@ async def run_insights_pipeline(
         logger.info(f"Completed insight pipeline for session {session_id}")
 
         refreshed_session = await session_service.get_session(
-            app_name="prepguardian_insights",
+            app_name=AppConstants.INSIGHTS_APP_NAME,
             user_id=user_id,
             session_id=session.id,
         )

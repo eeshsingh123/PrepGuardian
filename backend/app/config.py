@@ -9,13 +9,7 @@ class Settings(BaseSettings):
 
     # SQLite
     SQLITE_DB_PATH: str = "data/prepguardian.db"
-
-    # ADK Agent
-    AGENT_MODEL: str = "gemini-live-2.5-flash-native-audio"
-    AGENT_NAME: str = "prepguardian_agent"
-    APP_NAME: str = "prepguardian"
-    RESPONSE_MODALITIES: list[str] = ["AUDIO"]
-
+    
     # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",

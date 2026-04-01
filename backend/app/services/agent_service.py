@@ -14,19 +14,15 @@ from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.tools import google_search
 from google.adk.events import Event, EventActions
 
-from app.config import settings
+from app.constants import AppConstants, ModelConstants
 from app.logger import logger
 from app.prompts import AGENT_DESCRIPTION, AGENT_INSTRUCTION
 from app.services.user_service import get_user
 from app.services.conversation_service import ConversationTracker
 
-DEFAULT_TARGET_COMPANY = "Top Tech Company"
-DEFAULT_TARGET_LEVEL = "Mid-level"
-
-
 root_agent = Agent(
-    name=settings.AGENT_NAME,
-    model=settings.AGENT_MODEL,
+    name=AppConstants.AGENT_NAME,
+    model=ModelConstants.AGENT_LIVE_MODEL,
     description=AGENT_DESCRIPTION,
     instruction=AGENT_INSTRUCTION,
     tools=[google_search],
@@ -35,7 +31,7 @@ root_agent = Agent(
 session_service = InMemorySessionService()
 
 runner = Runner(
-    app_name=settings.APP_NAME,
+    app_name=AppConstants.APP_NAME,
     agent=root_agent,
     session_service=session_service,
 )
@@ -59,18 +55,18 @@ async def start_agent_session(user_id: str, session_id: str):
         "user_name": user.name or "Not specified",
         "user_experience": user.experience or "Not specified",
         "user_preferences": user.preferences or "Not specified",
-        "user_target_company": user.target_company or DEFAULT_TARGET_COMPANY,
-        "user_target_level": user.target_level or DEFAULT_TARGET_LEVEL,
+        "user_target_company": user.target_company or AppConstants.DEFAULT_TARGET_COMPANY,
+        "user_target_level": user.target_level or AppConstants.DEFAULT_TARGET_LEVEL,
     }
 
     session = await runner.session_service.get_session(
-        app_name=settings.APP_NAME,
+        app_name=AppConstants.APP_NAME,
         user_id=user_id,
         session_id=session_id,
     )
     if not session:
         session = await runner.session_service.create_session(
-            app_name=settings.APP_NAME,
+            app_name=AppConstants.APP_NAME,
             user_id=user_id,
             session_id=session_id,
             state=user_state
@@ -87,7 +83,7 @@ async def start_agent_session(user_id: str, session_id: str):
 
     run_config = RunConfig(
         streaming_mode=StreamingMode.BIDI,
-        response_modalities=settings.RESPONSE_MODALITIES,
+        response_modalities=AppConstants.RESPONSE_MODALITIES,
         session_resumption=types.SessionResumptionConfig(),
         # Enables context window compression to remove the 10-minute Vertex AI
         # session duration limit and prevent token exhaustion on long calls.

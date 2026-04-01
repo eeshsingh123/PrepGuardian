@@ -6,13 +6,12 @@ from app.services.conversation_service import (
     get_conversation_by_session,
     update_conversation_insights,
 )
+from app.constants import AppConstants
 from app.services.user_service import get_user
 from app.services.insight_service import run_insights_pipeline
 
-router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
-DEFAULT_TARGET_COMPANY = "Top Tech Company"
-DEFAULT_TARGET_LEVEL = "Mid-level"
+router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
 @router.get("/", response_model=list[ConversationSummaryResponse])
@@ -56,8 +55,8 @@ async def generate_insights(session_id: str, user_id: str):
     candidate_profile = {
         "name": user.name or "Candidate",
         "target_role": user.preferences or "Software Engineer",
-        "target_company": user.target_company or DEFAULT_TARGET_COMPANY,
-        "target_level": user.target_level or DEFAULT_TARGET_LEVEL,
+        "target_company": user.target_company or AppConstants.DEFAULT_TARGET_COMPANY,
+        "target_level": user.target_level or AppConstants.DEFAULT_TARGET_LEVEL,
         "years_experience": user.experience or "Not specified",
         "session_date": conversation.started_at.isoformat(),
     }
