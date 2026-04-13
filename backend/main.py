@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_databases, close_databases
+from app.routes import auth
 from app.routes import agent
 from app.routes import users
 from app.routes import conversations
@@ -13,9 +14,9 @@ from app.logger import logger
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing PrepGuardian Backend")
-    await init_databases()
+    await init_databases(app)
     yield
-    await close_databases()
+    await close_databases(app)
     logger.info("Shutting down PrepGuardian Backend")
 
 app = FastAPI(
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(agent.router)
+app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(conversations.router)
 

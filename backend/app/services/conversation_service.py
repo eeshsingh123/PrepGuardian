@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from app.db.mongo import get_mongo_db
 from app.logger import logger
-from app.models import (
+from app.schemas import (
     ConversationTurn,
     ConversationResponse,
     ConversationSummaryResponse,

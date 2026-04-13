@@ -69,6 +69,8 @@ uv sync
 # 2. Configure Environment Variables
 # Create a .env file in the backend directory OR update \backend\app\config.py with:
 MONGO_URI="mongodb://localhost:27017"
+REDIS_URL="redis://localhost:6379/0"
+JWT_SECRET_KEY="replace-with-openssl-rand-hex-32"
 GOOGLE_CLOUD_PROJECT="your-project-id"
 
 # 3. Spin up the server

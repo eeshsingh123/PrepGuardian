@@ -14,7 +14,7 @@ interface VoiceAgentProps {
 const WS_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/^http/, 'ws') || 'ws://127.0.0.1:8000';
 
 export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
-  const { user } = useAuth();
+  const { accessToken, user } = useAuth();
   const [agentState, setAgentState] = useState<AgentState>('disconnected');
   const [isMicActive, setIsMicActive] = useState(false);
   const [isScreenShared, setIsScreenShared] = useState(false);
@@ -60,7 +60,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
   // mount → cleanup → remount cycle.  The first mount's timer is cleared
   // before the socket is ever created, so only the final mount connects.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !accessToken) return;
 
     let aborted = false;
     let ws: WebSocket | null = null;
@@ -69,7 +69,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
       if (aborted) return;
 
       const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      const wsUrl = `${WS_BASE_URL}/agents/ws/${user.user_id}/${sessionId}`;
+      const wsUrl = `${WS_BASE_URL}/agents/ws/${sessionId}?token=${encodeURIComponent(accessToken)}`;
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -111,7 +111,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
       stopMic();
       stopScreenShare();
     };
-  }, [user]);
+  }, [accessToken, user]);
 
   const stopAudioPlayback = useCallback(() => {
     if (outputContextRef.current) {

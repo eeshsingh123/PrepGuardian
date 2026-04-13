@@ -19,6 +19,7 @@ from app.logger import logger
 from app.prompts import AGENT_DESCRIPTION, AGENT_INSTRUCTION
 from app.services.user_service import get_user
 from app.services.conversation_service import ConversationTracker
+from app.services.live_session_service import LiveSessionService
 
 root_agent = Agent(
     name=AppConstants.AGENT_NAME,
@@ -182,7 +183,10 @@ async def agent_to_client_messaging(
 
 
 async def client_to_agent_messaging(
-    websocket: WebSocket, live_request_queue: LiveRequestQueue, tracker: ConversationTracker
+    websocket: WebSocket,
+    live_request_queue: LiveRequestQueue,
+    tracker: ConversationTracker,
+    live_session_service: LiveSessionService | None = None,
 ):
     """
     Continuously reads incoming WebSocket messages from the client and forwards
@@ -198,6 +202,11 @@ async def client_to_agent_messaging(
     try:
         while True:
             message_json = await websocket.receive_text()
+            if live_session_service is not None:
+                await live_session_service.refresh_session(
+                    tracker.user_id,
+                    tracker.session_id,
+                )
             message = json.loads(message_json)
             mime_type = message.get("mime_type")
             data = message.get("data")
@@ -221,7 +230,10 @@ async def client_to_agent_messaging(
 
 
 async def run_bidirectional_session(
-    websocket: WebSocket, user_id: str, session_id: str
+    websocket: WebSocket,
+    user_id: str,
+    session_id: str,
+    live_session_service: LiveSessionService | None = None,
 ):
     """
     Orchestrates a full bidirectional WebSocket session between a client and the
@@ -240,9 +252,19 @@ async def run_bidirectional_session(
     agent_task = asyncio.create_task(
         agent_to_client_messaging(websocket, live_events, tracker)
     )
-    client_task = asyncio.create_task(
-        client_to_agent_messaging(websocket, live_request_queue, tracker)
-    )
+    if live_session_service is None:
+        client_task = asyncio.create_task(
+            client_to_agent_messaging(websocket, live_request_queue, tracker)
+        )
+    else:
+        client_task = asyncio.create_task(
+            client_to_agent_messaging(
+                websocket,
+                live_request_queue,
+                tracker,
+                live_session_service,
+            )
+        )
 
     try:
         done, pending = await asyncio.wait(

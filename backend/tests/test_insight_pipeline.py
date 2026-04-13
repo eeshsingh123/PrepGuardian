@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
-from app.models import ConversationResponse, ConversationTurn
+from app.schemas import ConversationResponse, ConversationTurn
 from app.routes.conversations import generate_insights
 from app.services import insight_service
 from app.services.agent_service import run_bidirectional_session
@@ -237,7 +237,13 @@ class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("app.routes.conversations.get_conversation_by_session", AsyncMock(return_value=conversation)), patch(
             "app.routes.conversations.get_user",
-            AsyncMock(return_value=SimpleNamespace(name="Eesh Singh", preferences="System Design Engineer", experience="8 years")),
+            AsyncMock(return_value=SimpleNamespace(
+                name="Eesh Singh",
+                preferences="System Design Engineer",
+                experience="8 years",
+                target_company=None,
+                target_level=None,
+            )),
         ), patch(
             "app.routes.conversations.run_insights_pipeline",
             AsyncMock(return_value=insight_payload),
@@ -245,7 +251,7 @@ class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
             "app.routes.conversations.update_conversation_insights",
             AsyncMock(return_value=True),
         ) as update_mock:
-            response = await generate_insights("sess_route", "pg_user")
+            response = await generate_insights("sess_route", SimpleNamespace(user_id="pg_user"))
 
         self.assertEqual(response, {"ok": True})
         self.assertEqual(run_pipeline_mock.await_args.kwargs["candidate_profile"]["target_company"], "Top Tech Company")
@@ -281,7 +287,13 @@ class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("app.routes.conversations.get_conversation_by_session", AsyncMock(return_value=conversation)), patch(
             "app.routes.conversations.get_user",
-            AsyncMock(return_value=SimpleNamespace(name="Eesh Singh", preferences="System Design Engineer", experience="8 years")),
+            AsyncMock(return_value=SimpleNamespace(
+                name="Eesh Singh",
+                preferences="System Design Engineer",
+                experience="8 years",
+                target_company=None,
+                target_level=None,
+            )),
         ), patch(
             "app.routes.conversations.run_insights_pipeline",
             AsyncMock(return_value=None),
@@ -290,7 +302,7 @@ class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
             AsyncMock(),
         ) as update_mock:
             with self.assertRaises(HTTPException) as ctx:
-                await generate_insights("sess_route", "pg_user")
+                await generate_insights("sess_route", SimpleNamespace(user_id="pg_user"))
 
         self.assertEqual(ctx.exception.status_code, 503)
         update_mock.assert_not_awaited()

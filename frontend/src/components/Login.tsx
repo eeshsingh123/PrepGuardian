@@ -14,7 +14,7 @@ export function Login({ isDarkMode }: LoginProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { setUser } = useAuth();
+  const { setSession } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,12 +23,12 @@ export function Login({ isDarkMode }: LoginProps) {
     setLoading(true);
 
     try {
-      const user = isSignup
+      const session = isSignup
         ? await signup({ username, password })
         : await login({ username, password });
 
-      setUser(user);
-      navigate(user.is_onboarded ? '/' : '/onboarding');
+      setSession(session);
+      navigate(session.user.is_onboarded ? '/' : '/onboarding');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -78,7 +78,7 @@ export function Login({ isDarkMode }: LoginProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={4}
+              minLength={8}
               className={`w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors ${dark
                 ? 'bg-[#0a0a0a] border-gray-700 text-white focus:border-gray-500 placeholder-gray-600'
                 : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400 placeholder-gray-400'
@@ -100,7 +100,7 @@ export function Login({ isDarkMode }: LoginProps) {
               : 'bg-black text-white hover:bg-gray-800'
               }`}
           >
-            {loading ? 'Please wait…' : (isSignup ? 'Sign Up' : 'Log In')}
+            {loading ? 'Please wait...' : (isSignup ? 'Sign Up' : 'Log In')}
           </button>
         </form>
 
@@ -118,3 +118,4 @@ export function Login({ isDarkMode }: LoginProps) {
     </div>
   );
 }
+

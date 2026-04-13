@@ -194,7 +194,7 @@ export function Transcripts({ isDarkMode }: TranscriptsProps) {
 
   const conversationsQuery = useQuery({
     queryKey: ['conversations', user?.user_id],
-    queryFn: () => fetchConversations(user!.user_id),
+    queryFn: () => fetchConversations(),
     enabled: !!user,
   });
 
@@ -318,7 +318,7 @@ function DashboardView({
   const dark = isDarkMode;
   const queryClient = useQueryClient();
   const generateInsightsMutation = useMutation({
-    mutationFn: () => generateInsights(user!.user_id, conversation.session_id),
+    mutationFn: () => generateInsights(conversation.session_id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transcript', selectedSessionId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', user?.user_id] });

@@ -6,6 +6,7 @@ import { Login } from './components/Login';
 import { Onboarding } from './components/Onboarding';
 import { Transcripts } from './components/Transcripts';
 import { Moon, Sun, Mic, ScrollText, LogOut } from 'lucide-react';
+import { logoutSession } from './lib/api';
 import './App.css';
 
 function App() {
@@ -73,7 +74,11 @@ function App() {
             </button>
             {user && !isAuthPage && (
               <button
-                onClick={logout}
+                onClick={() => {
+                  void logoutSession().catch(() => {
+                    logout();
+                  });
+                }}
                 className={`p-2 rounded-md border transition-colors ${isDarkMode ? 'border-gray-700 hover:bg-gray-800 text-gray-400 hover:text-white' : 'border-gray-200 hover:bg-gray-100 text-gray-500 hover:text-black'}`}
                 aria-label="Logout"
                 title="Logout"
