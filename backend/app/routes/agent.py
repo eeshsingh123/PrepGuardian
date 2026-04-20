@@ -4,7 +4,7 @@ from fastapi import APIRouter, WebSocket
 from fastapi import WebSocketException
 from fastapi import status
 
-from app.db.mongo import get_mongo_db
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.logger import logger
 from app.security import get_websocket_user
 from app.services.agent_service import run_bidirectional_session
@@ -29,7 +29,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str |
     if redis is None:
         raise WebSocketException(code=status.WS_1011_INTERNAL_ERROR)
 
-    user = await get_websocket_user(token, get_mongo_db(), redis)
+    db: AsyncIOMotorDatabase | None = getattr(websocket.app.state, "mongo_db", None)
+    if db is None:
+        raise WebSocketException(code=status.WS_1011_INTERNAL_ERROR)
+
+    user = await get_websocket_user(token, db, redis)
     live_session_service = LiveSessionService(redis)
     registered = await live_session_service.register_session(user.user_id, session_id)
     if not registered:
@@ -45,6 +49,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str |
             websocket,
             user.user_id,
             session_id,
+            db,
             live_session_service,
         )
     except Exception as e:

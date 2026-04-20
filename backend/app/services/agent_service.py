@@ -5,6 +5,8 @@ import asyncio
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
 from google.genai import types
 from google.genai.types import Part, Content, Blob
 from google.adk.runners import Runner
@@ -38,7 +40,7 @@ runner = Runner(
 )
 
 
-async def start_agent_session(user_id: str, session_id: str):
+async def start_agent_session(user_id: str, session_id: str, db: AsyncIOMotorDatabase):
     """
     Creates or retrieves an existing session for the given user and starts a live
     bidirectional streaming session with the ADK runner.
@@ -51,7 +53,7 @@ async def start_agent_session(user_id: str, session_id: str):
         A tuple of (live_events async generator, LiveRequestQueue) for the session.
     """
     # Fetch user data to inject into session context for prompt instructions
-    user = await get_user(user_id)
+    user = await get_user(user_id, db=db)
     user_state = {
         "user_name": user.name or "Not specified",
         "user_experience": user.experience or "Not specified",
@@ -233,6 +235,7 @@ async def run_bidirectional_session(
     websocket: WebSocket,
     user_id: str,
     session_id: str,
+    db: AsyncIOMotorDatabase,
     live_session_service: LiveSessionService | None = None,
 ):
     """
@@ -246,8 +249,8 @@ async def run_bidirectional_session(
         user_id: Backend-generated unique identifier for the connected user.
         session_id: Frontend-generated unique identifier for this session.
     """
-    live_events, live_request_queue = await start_agent_session(user_id, session_id)
-    tracker = ConversationTracker(session_id=session_id, user_id=user_id)
+    live_events, live_request_queue = await start_agent_session(user_id, session_id, db)
+    tracker = ConversationTracker(session_id=session_id, user_id=user_id, db=db)
 
     agent_task = asyncio.create_task(
         agent_to_client_messaging(websocket, live_events, tracker)

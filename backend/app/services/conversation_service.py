@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.db.mongo import get_mongo_db
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.logger import logger
 from app.schemas import (
     ConversationTurn,
@@ -20,9 +20,10 @@ class ConversationTracker:
         user_id: Backend-generated user identifier.
     """
 
-    def __init__(self, session_id: str, user_id: str):
+    def __init__(self, session_id: str, user_id: str, db: AsyncIOMotorDatabase):
         self.session_id = session_id
         self.user_id = user_id
+        self.db = db
         self.started_at = datetime.now(timezone.utc)
         self.turns: list[dict] = []
 
@@ -84,15 +85,14 @@ class ConversationTracker:
             "report_text": report_text,
         }
 
-        db = get_mongo_db()
-        await db.conversations.insert_one(conversation_doc)
+        await self.db.conversations.insert_one(conversation_doc)
         logger.info(
             f"Conversation saved: session='{self.session_id}', "
             f"turns={len(self.turns)}, duration={duration_seconds}s"
         )
 
 
-async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryResponse]:
+async def get_conversations_by_user(user_id: str, db: AsyncIOMotorDatabase) -> list[ConversationSummaryResponse]:
     """
     Fetches all conversation summaries for a given user, sorted by
     started_at descending (newest first). Returns a lightweight preview
@@ -104,7 +104,6 @@ async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryRes
     Returns:
         List of ConversationSummaryResponse sorted newest first.
     """
-    db = get_mongo_db()
     cursor = db.conversations.find(
         {"user_id": user_id},
         {
@@ -142,7 +141,7 @@ async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryRes
     return summaries
 
 
-async def get_conversation_by_session(session_id: str) -> ConversationResponse | None:
+async def get_conversation_by_session(session_id: str, db: AsyncIOMotorDatabase) -> ConversationResponse | None:
     """
     Fetches a single full conversation document by its session_id.
 
@@ -152,7 +151,6 @@ async def get_conversation_by_session(session_id: str) -> ConversationResponse |
     Returns:
         ConversationResponse with all turns, or None if not found.
     """
-    db = get_mongo_db()
     doc = await db.conversations.find_one(
         {"session_id": session_id}, {"_id": 0}
     )
@@ -184,6 +182,7 @@ async def update_conversation_insights(
     radar_data: dict | None = None,
     market_gap_data: dict | None = None,
     report_text: str | None = None,
+    db: AsyncIOMotorDatabase,
 ) -> bool:
     """
     Updates an existing conversation document with insight pipeline results.
@@ -192,7 +191,6 @@ async def update_conversation_insights(
     Returns:
         True if a document was matched and updated.
     """
-    db = get_mongo_db()
     update = {"$set": {}}
     if confidence_data is not None:
         update["$set"]["confidence_data"] = confidence_data

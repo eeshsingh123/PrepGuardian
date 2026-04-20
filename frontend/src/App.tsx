@@ -11,7 +11,7 @@ import './App.css';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
-  const { user, logout } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -24,8 +24,26 @@ function App() {
   }, [isDarkMode]);
 
   // Pages that don't need the full nav bar
-  const isAuthPage = location.pathname === '/login';
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
   const isOnboardingPage = location.pathname === '/onboarding';
+  const authRedirectPath = user?.is_onboarded ? '/' : '/onboarding';
+
+  const handleLogout = async () => {
+    try {
+      await logoutSession();
+    } finally {
+      logout();
+      navigate('/login', { replace: true });
+    }
+  };
+
+  const authLoading = (
+    <div className="flex h-[calc(100vh-73px)] items-center justify-center">
+      <div className={`rounded-lg border px-5 py-4 text-sm ${isDarkMode ? 'border-gray-800 bg-[#111] text-gray-400' : 'border-gray-200 bg-white text-gray-500'}`}>
+        Welcome Back!
+      </div>
+    </div>
+  );
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-[#0a0a0a] text-gray-100' : 'bg-gray-50 text-gray-900'} font-sans`}>
@@ -40,7 +58,7 @@ function App() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            {/* Navigation Links — Only when logged in and not on auth/onboarding */}
+            {/* Navigation links shown only when logged in and past onboarding */}
             {user && !isAuthPage && !isOnboardingPage && (
               <>
                 <Link
@@ -74,11 +92,7 @@ function App() {
             </button>
             {user && !isAuthPage && (
               <button
-                onClick={() => {
-                  void logoutSession().catch(() => {
-                    logout();
-                  });
-                }}
+                onClick={() => void handleLogout()}
                 className={`p-2 rounded-md border transition-colors ${isDarkMode ? 'border-gray-700 hover:bg-gray-800 text-gray-400 hover:text-white' : 'border-gray-200 hover:bg-gray-100 text-gray-500 hover:text-black'}`}
                 aria-label="Logout"
                 title="Logout"
@@ -93,19 +107,24 @@ function App() {
       <main className="max-w-[1600px] mx-auto w-full px-4 sm:px-6 lg:px-8">
         <Routes>
           <Route path="/login" element={
-            user ? <Navigate to={user.is_onboarded ? '/' : '/onboarding'} /> : <Login isDarkMode={isDarkMode} />
+            isLoading ? authLoading : user ? <Navigate to={authRedirectPath} replace /> : <Login isDarkMode={isDarkMode} mode="login" />
+          } />
+          <Route path="/signup" element={
+            isLoading ? authLoading : user ? <Navigate to={authRedirectPath} replace /> : <Login isDarkMode={isDarkMode} mode="signup" />
           } />
           <Route path="/onboarding" element={
-            !user ? <Navigate to="/login" /> : <Onboarding isDarkMode={isDarkMode} />
+            isLoading ? authLoading : !user ? <Navigate to="/login" replace /> : <Onboarding isDarkMode={isDarkMode} />
           } />
           <Route path="/" element={
-            !user ? <Navigate to="/login" /> :
-              !user.is_onboarded ? <Navigate to="/onboarding" /> :
-                <div className="h-[calc(100vh-73px)]"><VoiceAgent isDarkMode={isDarkMode} onSessionEnded={() => navigate('/transcripts')} /></div>
+            isLoading ? authLoading :
+              !user ? <Navigate to="/login" replace /> :
+                !user.is_onboarded ? <Navigate to="/onboarding" replace /> :
+                  <div className="h-[calc(100vh-73px)]"><VoiceAgent isDarkMode={isDarkMode} onSessionEnded={() => navigate('/transcripts')} /></div>
           } />
           <Route path="/transcripts" element={
-            !user ? <Navigate to="/login" /> : <Transcripts isDarkMode={isDarkMode} />
+            isLoading ? authLoading : !user ? <Navigate to="/login" replace /> : <Transcripts isDarkMode={isDarkMode} />
           } />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

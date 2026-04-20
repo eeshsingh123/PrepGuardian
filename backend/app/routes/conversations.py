@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.dependencies import DatabaseDep
 from app.schemas import ConversationResponse, ConversationSummaryResponse, UserPublic
 from app.services.conversation_service import (
     get_conversations_by_user,
@@ -20,20 +21,22 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 @router.get("/", response_model=list[ConversationSummaryResponse])
 async def list_conversations(
     current_user: Annotated[UserPublic, Depends(get_current_user)],
+    db: DatabaseDep,
 ):
     """
     Returns all conversation summaries for a user, sorted newest first.
     Each summary includes a short preview from the first agent response.
     """
-    return await get_conversations_by_user(current_user.user_id)
+    return await get_conversations_by_user(current_user.user_id, db=db)
 
 
 @router.get("/{session_id}", response_model=ConversationResponse)
 async def get_conversation(
     session_id: str,
     current_user: Annotated[UserPublic, Depends(get_current_user)],
+    db: DatabaseDep,
 ):
-    conversation = await get_conversation_by_session(session_id)
+    conversation = await get_conversation_by_session(session_id, db=db)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     if conversation.user_id != current_user.user_id:
@@ -45,13 +48,14 @@ async def get_conversation(
 async def generate_insights(
     session_id: str,
     current_user: Annotated[UserPublic, Depends(get_current_user)],
+    db: DatabaseDep,
 ):
     """
     Loads the conversation from the DB, runs the insight pipeline, and updates
     the conversation document with the new insights. Returns 200 + { "ok": true }
     on success; client should refetch the conversation.
     """
-    conversation = await get_conversation_by_session(session_id)
+    conversation = await get_conversation_by_session(session_id, db=db)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     if conversation.user_id != current_user.user_id:
@@ -61,7 +65,7 @@ async def generate_insights(
             status_code=400,
             detail="No transcript to analyze.",
         )
-    user = await get_user(conversation.user_id)
+    user = await get_user(conversation.user_id, db=db)
     candidate_profile = {
         "name": user.name or "Candidate",
         "target_role": user.preferences or "Software Engineer",
@@ -88,5 +92,6 @@ async def generate_insights(
         radar_data=insight_data.get("radar_data"),
         market_gap_data=insight_data.get("market_gap_data"),
         report_text=insight_data.get("report_text"),
+        db=db,
     )
     return {"ok": True}

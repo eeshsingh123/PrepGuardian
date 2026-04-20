@@ -9,9 +9,9 @@ async def init_databases(app=None):
     Initializes all database connections. Called once during FastAPI
     startup via the lifespan context manager.
     """
-    await connect_mongo()
     await connect_sqlite()
     if app is not None:
+        await connect_mongo(app)
         await connect_redis(app)
     logger.info("All databases initialized.")
 
@@ -23,6 +23,6 @@ async def close_databases(app=None):
     """
     if app is not None:
         await close_redis(app)
-    await close_mongo()
+        await close_mongo(app)
     await close_sqlite()
     logger.info("All database connections closed.")
