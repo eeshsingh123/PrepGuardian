@@ -65,6 +65,8 @@ export interface ConversationSummary {
   started_at: string;
   ended_at: string | null;
   duration_seconds: number;
+  time_limit_seconds: number | null;
+  ended_reason: string | null;
   turn_count: number;
   preview: string;
 }
@@ -81,6 +83,8 @@ export interface ConversationFull {
   started_at: string;
   ended_at: string | null;
   duration_seconds: number;
+  time_limit_seconds: number | null;
+  ended_reason: string | null;
   turn_count: number;
   user_turn_count: number;
   agent_turn_count: number;

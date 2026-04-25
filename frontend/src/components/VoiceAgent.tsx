@@ -1,10 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, MonitorUp, MonitorOff, Volume2, VolumeX, Wifi, WifiOff, LogOut } from 'lucide-react';
+import { Clock, Mic, MicOff, MonitorUp, MonitorOff, Volume2, VolumeX, Wifi, WifiOff, LogOut } from 'lucide-react';
 import { logger } from '../lib/logger';
 import { useAuth } from '../lib/auth';
 import { ConfirmationModal } from './ConfirmationModal';
 
 type AgentState = 'disconnected' | 'idle' | 'listening' | 'agent_speaking';
+type SessionEndReason = 'user_ended' | 'timer_expired';
+type TimerTone = 'green' | 'yellow' | 'orange' | 'red';
+type SessionTimeContext = {
+  elapsed_seconds: number;
+  remaining_seconds: number;
+  time_limit_seconds: number;
+};
 
 interface VoiceAgentProps {
   isDarkMode: boolean;
@@ -12,6 +19,23 @@ interface VoiceAgentProps {
 }
 
 const WS_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/^http/, 'ws') || 'ws://127.0.0.1:8000';
+const SESSION_DURATION_SECONDS = 40 * 60;
+const TEN_MINUTES_SECONDS = 10 * 60;
+const THREE_MINUTES_SECONDS = 3 * 60;
+
+function formatTimer(seconds: number): string {
+  const clampedSeconds = Math.max(0, seconds);
+  const mins = Math.floor(clampedSeconds / 60);
+  const secs = clampedSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function getTimerTone(seconds: number): TimerTone {
+  if (seconds <= 5 * 60) return 'red';
+  if (seconds <= TEN_MINUTES_SECONDS) return 'orange';
+  if (seconds <= 20 * 60) return 'yellow';
+  return 'green';
+}
 
 export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
   const { accessToken, user } = useAuth();
@@ -22,8 +46,13 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
   const [transcript, setTranscript] = useState('');
   const [showEndSessionModal, setShowEndSessionModal] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(SESSION_DURATION_SECONDS);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
+  const sessionStartedAtRef = useRef<number | null>(null);
+  const warningThresholdsSentRef = useRef<Set<number>>(new Set());
+  const endSessionRef = useRef<((reason: SessionEndReason) => void) | null>(null);
 
   // Mic refs
   const micContextRef = useRef<AudioContext | null>(null);
@@ -46,6 +75,90 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
 
   // Track if the speaking state timeout is active
   const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sendSessionControl = useCallback((event: string, payload: Record<string, unknown> = {}) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    wsRef.current.send(JSON.stringify({
+      mime_type: 'application/session-control',
+      event,
+      ...payload,
+    }));
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (timerIntervalRef.current !== null) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  }, []);
+
+  const getElapsedSeconds = useCallback(() => {
+    if (sessionStartedAtRef.current === null) return 0;
+
+    const elapsedSeconds = Math.floor((Date.now() - sessionStartedAtRef.current) / 1000);
+    return Math.min(SESSION_DURATION_SECONDS, Math.max(0, elapsedSeconds));
+  }, []);
+
+  const getSessionTimeContext = useCallback((): SessionTimeContext | null => {
+    if (sessionStartedAtRef.current === null) return null;
+
+    const elapsedSeconds = getElapsedSeconds();
+    return {
+      elapsed_seconds: elapsedSeconds,
+      remaining_seconds: Math.max(0, SESSION_DURATION_SECONDS - elapsedSeconds),
+      time_limit_seconds: SESSION_DURATION_SECONDS,
+    };
+  }, [getElapsedSeconds]);
+
+  const sendUserPayload = useCallback((payload: Record<string, unknown>) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    const timeContext = getSessionTimeContext();
+    wsRef.current.send(JSON.stringify({
+      ...payload,
+      ...(timeContext ? { time_context: timeContext } : {}),
+    }));
+  }, [getSessionTimeContext]);
+
+  const startSessionTimer = useCallback(() => {
+    if (sessionStartedAtRef.current !== null) return;
+
+    sessionStartedAtRef.current = Date.now();
+    setHasStarted(true);
+    setSecondsRemaining(SESSION_DURATION_SECONDS);
+    sendSessionControl('session_started', {
+      time_limit_seconds: SESSION_DURATION_SECONDS,
+    });
+
+    timerIntervalRef.current = window.setInterval(() => {
+      if (sessionStartedAtRef.current === null) return;
+
+      const elapsedSeconds = Math.floor((Date.now() - sessionStartedAtRef.current) / 1000);
+      const remainingSeconds = Math.max(SESSION_DURATION_SECONDS - elapsedSeconds, 0);
+      setSecondsRemaining(remainingSeconds);
+
+      if (remainingSeconds > 0 && remainingSeconds <= TEN_MINUTES_SECONDS && !warningThresholdsSentRef.current.has(TEN_MINUTES_SECONDS)) {
+        warningThresholdsSentRef.current.add(TEN_MINUTES_SECONDS);
+        sendSessionControl('time_warning', {
+          seconds_remaining: TEN_MINUTES_SECONDS,
+          time_limit_seconds: SESSION_DURATION_SECONDS,
+        });
+      }
+
+      if (remainingSeconds > 0 && remainingSeconds <= THREE_MINUTES_SECONDS && !warningThresholdsSentRef.current.has(THREE_MINUTES_SECONDS)) {
+        warningThresholdsSentRef.current.add(THREE_MINUTES_SECONDS);
+        sendSessionControl('time_warning', {
+          seconds_remaining: THREE_MINUTES_SECONDS,
+          time_limit_seconds: SESSION_DURATION_SECONDS,
+        });
+      }
+
+      if (remainingSeconds <= 0) {
+        endSessionRef.current?.('timer_expired');
+      }
+    }, 1000);
+  }, [sendSessionControl]);
 
   const updateAgentState = useCallback((newState: AgentState) => {
     setAgentState(prev => {
@@ -110,8 +223,9 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
       }
       stopMic();
       stopScreenShare();
+      stopTimer();
     };
-  }, [accessToken, user]);
+  }, [accessToken, stopTimer, user]);
 
   const stopAudioPlayback = useCallback(() => {
     if (outputContextRef.current) {
@@ -147,7 +261,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
     // Agent audio transcript
     if (msg.mime_type === 'text/plain' && msg.is_transcript) {
       setTranscript(msg.data as string);
-      setHasStarted(true);
+      startSessionTimer();
     }
 
     // Audio PCM playback
@@ -157,7 +271,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
       }
       // Mark as speaking and reset timeout
       setAgentState('agent_speaking');
-      setHasStarted(true);
+      startSessionTimer();
       if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
       speakingTimeoutRef.current = setTimeout(() => {
         isPlayingRef.current = false;
@@ -168,7 +282,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
     // Turn complete
     if (msg.turn_complete) {
       // Mark session as started if the agent finished a turn
-      setHasStarted(true);
+      startSessionTimer();
       // Short delay before transitioning out of speaking state
       if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
       speakingTimeoutRef.current = setTimeout(() => {
@@ -176,7 +290,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
         setAgentState(prev => prev === 'agent_speaking' ? (isMicActive ? 'listening' : 'idle') : prev);
       }, 300);
     }
-  }, [isSpeakerMuted, isMicActive, stopAudioPlayback]);
+  }, [isSpeakerMuted, isMicActive, startSessionTimer, stopAudioPlayback]);
 
   // --- Audio Playback ---
   const playAudioChunk = (base64Str: string) => {
@@ -230,7 +344,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
-      setHasStarted(true);
+      startSessionTimer();
 
       const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       micContextRef.current = context;
@@ -256,10 +370,10 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
           binary += String.fromCharCode(bytes[i]);
         }
 
-        wsRef.current.send(JSON.stringify({
+        sendUserPayload({
           mime_type: 'audio/pcm',
           data: window.btoa(binary),
-        }));
+        });
       };
 
       source.connect(processor);
@@ -303,7 +417,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       screenStreamRef.current = stream;
-      setHasStarted(true);
+      startSessionTimer();
 
       // Create a hidden (detached) video element used solely for drawing frames
       // onto the canvas. A detached element won't autoplay reliably in all browsers,
@@ -382,14 +496,25 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
     const base64Data = dataUrl.split(',')[1];
 
-    wsRef.current.send(JSON.stringify({
+    sendUserPayload({
       mime_type: 'image/jpeg',
       data: base64Data,
-    }));
+    });
   };
 
-  const endSession = useCallback(() => {
+  const endSession = useCallback((reason: SessionEndReason = 'user_ended') => {
     setShowEndSessionModal(false);
+    const elapsedSeconds = getElapsedSeconds();
+    const remainingSeconds = Math.max(0, SESSION_DURATION_SECONDS - elapsedSeconds);
+
+    sendSessionControl('session_ended', {
+      reason,
+      elapsed_seconds: elapsedSeconds,
+      remaining_seconds: remainingSeconds,
+      time_limit_seconds: SESSION_DURATION_SECONDS,
+    });
+    stopTimer();
+
     if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {
       wsRef.current.close();
     }
@@ -399,7 +524,11 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
     if (onSessionEnded) {
       onSessionEnded();
     }
-  }, [onSessionEnded, stopAudioPlayback]);
+  }, [getElapsedSeconds, onSessionEnded, sendSessionControl, stopAudioPlayback, stopTimer]);
+
+  useEffect(() => {
+    endSessionRef.current = endSession;
+  }, [endSession]);
 
   const handleEndSessionClick = () => {
     setShowEndSessionModal(true);
@@ -408,13 +537,24 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
   // Determine the CSS class for the orb based on current state
   const orbStateClass = `orb--${agentState}`;
   const isConnected = agentState !== 'disconnected';
+  const timerTone = getTimerTone(secondsRemaining);
 
   return (
     <div className="voice-agent">
       {/* Connection status */}
-      <div className={`voice-agent__status ${isConnected ? 'voice-agent__status--connected' : 'voice-agent__status--disconnected'}`}>
-        {isConnected ? <Wifi className="voice-agent__status-icon" /> : <WifiOff className="voice-agent__status-icon" />}
-        <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+      <div className="voice-agent__topbar">
+        <div className={`voice-agent__status ${isConnected ? 'voice-agent__status--connected' : 'voice-agent__status--disconnected'}`}>
+          {isConnected ? <Wifi className="voice-agent__status-icon" /> : <WifiOff className="voice-agent__status-icon" />}
+          <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+        </div>
+
+        {hasStarted && (
+          <div className={`voice-agent__timer voice-agent__timer--${isDarkMode ? 'dark' : 'light'} voice-agent__timer--${timerTone}`} aria-live="polite">
+            <Clock className="voice-agent__timer-icon" />
+            <span className="voice-agent__timer-label">Time left</span>
+            <span className="voice-agent__timer-value">{formatTimer(secondsRemaining)}</span>
+          </div>
+        )}
       </div>
 
       {/* Central Orb Visualizer */}
@@ -517,7 +657,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded }: VoiceAgentProps) {
       <ConfirmationModal
         isOpen={showEndSessionModal}
         onClose={() => setShowEndSessionModal(false)}
-        onConfirm={endSession}
+        onConfirm={() => endSession('user_ended')}
         title="End Session?"
         message="Are you sure you want to end this learning session? Your progress and transcript will be saved."
         confirmText="End Session"

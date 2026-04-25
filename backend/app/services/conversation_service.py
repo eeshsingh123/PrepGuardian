@@ -24,12 +24,28 @@ class ConversationTracker:
         self.session_id = session_id
         self.user_id = user_id
         self.db = db
-        self.started_at = datetime.now(timezone.utc)
+        self.connected_at = datetime.now(timezone.utc)
+        self.started_at: datetime | None = None
         self.turns: list[dict] = []
+        self.time_limit_seconds: int | None = None
+        self.ended_reason: str | None = None
+
+    def mark_started(self, time_limit_seconds: int | None = None):
+        if self.started_at is None:
+            self.started_at = datetime.now(timezone.utc)
+        if time_limit_seconds is not None:
+            self.time_limit_seconds = time_limit_seconds
+
+    def mark_ended(self, reason: str | None = None, time_limit_seconds: int | None = None):
+        if reason:
+            self.ended_reason = reason
+        if time_limit_seconds is not None:
+            self.time_limit_seconds = time_limit_seconds
 
     def add_user_turn(self, text: str):
         if not text or not text.strip():
             return
+        self.mark_started()
             
         stripped_text = text.strip()
         
@@ -46,6 +62,7 @@ class ConversationTracker:
     def add_agent_turn(self, text: str):
         if not text or not text.strip():
             return
+        self.mark_started()
         self.turns.append({
             "role": "agent",
             "text": text.strip(),
@@ -65,16 +82,19 @@ class ConversationTracker:
             return
 
         ended_at = datetime.now(timezone.utc)
-        duration_seconds = int((ended_at - self.started_at).total_seconds())
+        started_at = self.started_at or self.connected_at
+        duration_seconds = int((ended_at - started_at).total_seconds())
         user_turn_count = sum(1 for t in self.turns if t["role"] == "user")
         agent_turn_count = sum(1 for t in self.turns if t["role"] == "agent")
 
         conversation_doc = {
             "session_id": self.session_id,
             "user_id": self.user_id,
-            "started_at": self.started_at,
+            "started_at": started_at,
             "ended_at": ended_at,
             "duration_seconds": duration_seconds,
+            "time_limit_seconds": self.time_limit_seconds,
+            "ended_reason": self.ended_reason or "websocket_closed",
             "turn_count": len(self.turns),
             "user_turn_count": user_turn_count,
             "agent_turn_count": agent_turn_count,
@@ -112,6 +132,8 @@ async def get_conversations_by_user(user_id: str, db: AsyncIOMotorDatabase) -> l
             "started_at": 1,
             "ended_at": 1,
             "duration_seconds": 1,
+            "time_limit_seconds": 1,
+            "ended_reason": 1,
             "turn_count": 1,
             "turns": 1,
             "_id": 0,
@@ -134,6 +156,8 @@ async def get_conversations_by_user(user_id: str, db: AsyncIOMotorDatabase) -> l
                 started_at=doc["started_at"],
                 ended_at=doc.get("ended_at"),
                 duration_seconds=doc.get("duration_seconds", 0),
+                time_limit_seconds=doc.get("time_limit_seconds"),
+                ended_reason=doc.get("ended_reason"),
                 turn_count=doc.get("turn_count", 0),
                 preview=preview,
             )
@@ -164,6 +188,8 @@ async def get_conversation_by_session(session_id: str, db: AsyncIOMotorDatabase)
         started_at=doc["started_at"],
         ended_at=doc.get("ended_at"),
         duration_seconds=doc.get("duration_seconds", 0),
+        time_limit_seconds=doc.get("time_limit_seconds"),
+        ended_reason=doc.get("ended_reason"),
         turn_count=doc.get("turn_count", 0),
         user_turn_count=doc.get("user_turn_count", 0),
         agent_turn_count=doc.get("agent_turn_count", 0),

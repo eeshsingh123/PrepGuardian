@@ -201,6 +201,10 @@ async def client_to_agent_messaging(
         live_request_queue: The ADK queue used to send input to the running agent.
         tracker: ConversationTracker instance to record user text turns.
     """
+    last_time_context_sent_at = 0.0
+    last_time_context_remaining: int | None = None
+    time_context_refresh_seconds = 15.0
+
     try:
         while True:
             message_json = await websocket.receive_text()
@@ -212,8 +216,85 @@ async def client_to_agent_messaging(
             message = json.loads(message_json)
             mime_type = message.get("mime_type")
             data = message.get("data")
+            time_context = message.get("time_context")
 
-            if mime_type == "text/plain":
+            if isinstance(time_context, dict):
+                raw_remaining = time_context.get("remaining_seconds")
+                raw_elapsed = time_context.get("elapsed_seconds")
+                raw_time_limit = time_context.get("time_limit_seconds")
+                if (
+                    isinstance(raw_remaining, int)
+                    and isinstance(raw_elapsed, int)
+                    and isinstance(raw_time_limit, int)
+                ):
+                    now = asyncio.get_running_loop().time()
+                    remaining_minute = raw_remaining // 60
+                    previous_remaining_minute = (
+                        last_time_context_remaining // 60
+                        if last_time_context_remaining is not None
+                        else None
+                    )
+                    should_send_time_context = (
+                        last_time_context_remaining is None
+                        or remaining_minute != previous_remaining_minute
+                        or now - last_time_context_sent_at >= time_context_refresh_seconds
+                    )
+                    if should_send_time_context:
+                        live_request_queue.send_content(
+                            content=Content(
+                                role="user",
+                                parts=[
+                                    Part.from_text(
+                                        text=(
+                                            "Silent session timer context: "
+                                            f"{raw_remaining} seconds remaining, "
+                                            f"{raw_elapsed} seconds elapsed, "
+                                            f"{raw_time_limit} seconds total. "
+                                            "Use this only to pace the interview and nudge "
+                                            "toward high-impact design areas when useful. "
+                                            "Do not answer this packet directly."
+                                        )
+                                    )
+                                ],
+                            )
+                        )
+                        last_time_context_sent_at = now
+                        last_time_context_remaining = raw_remaining
+
+            if mime_type == "application/session-control":
+                event_type = message.get("event")
+                raw_time_limit = message.get("time_limit_seconds")
+                time_limit_seconds = raw_time_limit if isinstance(raw_time_limit, int) else None
+
+                if event_type == "session_started":
+                    tracker.mark_started(time_limit_seconds)
+
+                elif event_type == "time_warning":
+                    raw_seconds_remaining = message.get("seconds_remaining")
+                    if isinstance(raw_seconds_remaining, int):
+                        tracker.mark_started(time_limit_seconds)
+                        minutes_remaining = max(1, raw_seconds_remaining // 60)
+                        warning_text = (
+                            "Session timer update: briefly tell the candidate "
+                            f"there are {minutes_remaining} minutes remaining, "
+                            "then guide them to prioritize the highest-impact parts "
+                            "of the system design discussion."
+                        )
+                        live_request_queue.send_content(
+                            content=Content(
+                                role="user",
+                                parts=[Part.from_text(text=warning_text)],
+                            )
+                        )
+
+                elif event_type == "session_ended":
+                    reason = message.get("reason")
+                    tracker.mark_ended(
+                        reason if isinstance(reason, str) else None,
+                        time_limit_seconds,
+                    )
+
+            elif mime_type == "text/plain":
                 content = Content(role="user", parts=[Part.from_text(text=data)])
                 live_request_queue.send_content(content=content)
                 tracker.add_user_turn(data)

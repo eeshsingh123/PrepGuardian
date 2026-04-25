@@ -15,6 +15,8 @@ class ConversationSummaryResponse(BaseModel):
     started_at: datetime
     ended_at: datetime | None = None
     duration_seconds: int = 0
+    time_limit_seconds: int | None = None
+    ended_reason: str | None = None
     turn_count: int = 0
     preview: str = ""
 
@@ -25,6 +27,8 @@ class ConversationResponse(BaseModel):
     started_at: datetime
     ended_at: datetime | None = None
     duration_seconds: int = 0
+    time_limit_seconds: int | None = None
+    ended_reason: str | None = None
     turn_count: int = 0
     user_turn_count: int = 0
     agent_turn_count: int = 0

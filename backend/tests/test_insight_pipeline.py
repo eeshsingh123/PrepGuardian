@@ -1,4 +1,6 @@
 import copy
+import base64
+import json
 import unittest
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -6,11 +8,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
+from fastapi.websockets import WebSocketDisconnect
 
 from app.schemas import ConversationResponse, ConversationTurn
 from app.routes.conversations import generate_insights
 from app.services import insight_service
-from app.services.agent_service import run_bidirectional_session
+from app.services.agent_service import client_to_agent_messaging, run_bidirectional_session
+from app.services.conversation_service import ConversationTracker
 
 
 @dataclass
@@ -175,20 +179,121 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
             "app.services.agent_service.client_to_agent_messaging",
             side_effect=fake_client_to_agent_messaging,
         ), patch(
-            "app.services.conversation_service.get_mongo_db",
-            return_value=fake_db,
-        ), patch(
             "app.services.agent_service.get_user",
             AsyncMock(),
         ) as get_user_mock:
-            await run_bidirectional_session(object(), "pg_user", "sess_live")
+            await run_bidirectional_session(object(), "pg_user", "sess_live", fake_db)
 
         self.assertEqual(len(saved_docs), 1)
         self.assertIsNone(saved_docs[0]["confidence_data"])
         self.assertIsNone(saved_docs[0]["radar_data"])
         self.assertIsNone(saved_docs[0]["market_gap_data"])
         self.assertIsNone(saved_docs[0]["report_text"])
+        self.assertEqual(saved_docs[0]["ended_reason"], "websocket_closed")
         get_user_mock.assert_not_awaited()
+
+    async def test_session_control_warning_prompts_agent_without_recording_user_turn(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.messages = [
+                    json.dumps({
+                        "mime_type": "application/session-control",
+                        "event": "session_started",
+                        "time_limit_seconds": 2400,
+                    }),
+                    json.dumps({
+                        "mime_type": "application/session-control",
+                        "event": "time_warning",
+                        "seconds_remaining": 600,
+                        "time_limit_seconds": 2400,
+                    }),
+                    json.dumps({
+                        "mime_type": "application/session-control",
+                        "event": "session_ended",
+                        "reason": "timer_expired",
+                        "time_limit_seconds": 2400,
+                    }),
+                ]
+
+            async def receive_text(self):
+                if not self.messages:
+                    raise WebSocketDisconnect()
+                return self.messages.pop(0)
+
+        class FakeLiveRequestQueue:
+            def __init__(self):
+                self.contents = []
+
+            def send_content(self, content):
+                self.contents.append(content)
+
+        tracker = ConversationTracker(
+            session_id="sess_timer",
+            user_id="pg_user",
+            db=SimpleNamespace(),
+        )
+        live_request_queue = FakeLiveRequestQueue()
+
+        await client_to_agent_messaging(
+            FakeWebSocket(),
+            live_request_queue,
+            tracker,
+        )
+
+        self.assertEqual(tracker.turns, [])
+        self.assertEqual(tracker.time_limit_seconds, 2400)
+        self.assertEqual(tracker.ended_reason, "timer_expired")
+        self.assertEqual(len(live_request_queue.contents), 1)
+        self.assertIn("10 minutes remaining", live_request_queue.contents[0].parts[0].text)
+
+    async def test_user_activity_time_context_updates_agent_without_transcript_turn(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.messages = [
+                    json.dumps({
+                        "mime_type": "audio/pcm",
+                        "data": base64.b64encode(b"pcm").decode("ascii"),
+                        "time_context": {
+                            "elapsed_seconds": 120,
+                            "remaining_seconds": 2280,
+                            "time_limit_seconds": 2400,
+                        },
+                    }),
+                ]
+
+            async def receive_text(self):
+                if not self.messages:
+                    raise WebSocketDisconnect()
+                return self.messages.pop(0)
+
+        class FakeLiveRequestQueue:
+            def __init__(self):
+                self.contents = []
+                self.realtime = []
+
+            def send_content(self, content):
+                self.contents.append(content)
+
+            def send_realtime(self, blob):
+                self.realtime.append(blob)
+
+        tracker = ConversationTracker(
+            session_id="sess_timer",
+            user_id="pg_user",
+            db=SimpleNamespace(),
+        )
+        live_request_queue = FakeLiveRequestQueue()
+
+        await client_to_agent_messaging(
+            FakeWebSocket(),
+            live_request_queue,
+            tracker,
+        )
+
+        self.assertEqual(tracker.turns, [])
+        self.assertEqual(len(live_request_queue.contents), 1)
+        self.assertEqual(len(live_request_queue.realtime), 1)
+        self.assertIn("2280 seconds remaining", live_request_queue.contents[0].parts[0].text)
 
 
 class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
