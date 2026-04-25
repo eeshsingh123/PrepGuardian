@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from app.db.mongo import get_mongo_db
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.logger import logger
-from app.models import (
+from app.schemas import (
     ConversationTurn,
     ConversationResponse,
     ConversationSummaryResponse,
@@ -20,15 +20,32 @@ class ConversationTracker:
         user_id: Backend-generated user identifier.
     """
 
-    def __init__(self, session_id: str, user_id: str):
+    def __init__(self, session_id: str, user_id: str, db: AsyncIOMotorDatabase):
         self.session_id = session_id
         self.user_id = user_id
-        self.started_at = datetime.now(timezone.utc)
+        self.db = db
+        self.connected_at = datetime.now(timezone.utc)
+        self.started_at: datetime | None = None
         self.turns: list[dict] = []
+        self.time_limit_seconds: int | None = None
+        self.ended_reason: str | None = None
+
+    def mark_started(self, time_limit_seconds: int | None = None):
+        if self.started_at is None:
+            self.started_at = datetime.now(timezone.utc)
+        if time_limit_seconds is not None:
+            self.time_limit_seconds = time_limit_seconds
+
+    def mark_ended(self, reason: str | None = None, time_limit_seconds: int | None = None):
+        if reason:
+            self.ended_reason = reason
+        if time_limit_seconds is not None:
+            self.time_limit_seconds = time_limit_seconds
 
     def add_user_turn(self, text: str):
         if not text or not text.strip():
             return
+        self.mark_started()
             
         stripped_text = text.strip()
         
@@ -45,6 +62,7 @@ class ConversationTracker:
     def add_agent_turn(self, text: str):
         if not text or not text.strip():
             return
+        self.mark_started()
         self.turns.append({
             "role": "agent",
             "text": text.strip(),
@@ -64,16 +82,19 @@ class ConversationTracker:
             return
 
         ended_at = datetime.now(timezone.utc)
-        duration_seconds = int((ended_at - self.started_at).total_seconds())
+        started_at = self.started_at or self.connected_at
+        duration_seconds = int((ended_at - started_at).total_seconds())
         user_turn_count = sum(1 for t in self.turns if t["role"] == "user")
         agent_turn_count = sum(1 for t in self.turns if t["role"] == "agent")
 
         conversation_doc = {
             "session_id": self.session_id,
             "user_id": self.user_id,
-            "started_at": self.started_at,
+            "started_at": started_at,
             "ended_at": ended_at,
             "duration_seconds": duration_seconds,
+            "time_limit_seconds": self.time_limit_seconds,
+            "ended_reason": self.ended_reason or "websocket_closed",
             "turn_count": len(self.turns),
             "user_turn_count": user_turn_count,
             "agent_turn_count": agent_turn_count,
@@ -84,15 +105,14 @@ class ConversationTracker:
             "report_text": report_text,
         }
 
-        db = get_mongo_db()
-        await db.conversations.insert_one(conversation_doc)
+        await self.db.conversations.insert_one(conversation_doc)
         logger.info(
             f"Conversation saved: session='{self.session_id}', "
             f"turns={len(self.turns)}, duration={duration_seconds}s"
         )
 
 
-async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryResponse]:
+async def get_conversations_by_user(user_id: str, db: AsyncIOMotorDatabase) -> list[ConversationSummaryResponse]:
     """
     Fetches all conversation summaries for a given user, sorted by
     started_at descending (newest first). Returns a lightweight preview
@@ -104,7 +124,6 @@ async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryRes
     Returns:
         List of ConversationSummaryResponse sorted newest first.
     """
-    db = get_mongo_db()
     cursor = db.conversations.find(
         {"user_id": user_id},
         {
@@ -113,6 +132,8 @@ async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryRes
             "started_at": 1,
             "ended_at": 1,
             "duration_seconds": 1,
+            "time_limit_seconds": 1,
+            "ended_reason": 1,
             "turn_count": 1,
             "turns": 1,
             "_id": 0,
@@ -135,6 +156,8 @@ async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryRes
                 started_at=doc["started_at"],
                 ended_at=doc.get("ended_at"),
                 duration_seconds=doc.get("duration_seconds", 0),
+                time_limit_seconds=doc.get("time_limit_seconds"),
+                ended_reason=doc.get("ended_reason"),
                 turn_count=doc.get("turn_count", 0),
                 preview=preview,
             )
@@ -142,7 +165,7 @@ async def get_conversations_by_user(user_id: str) -> list[ConversationSummaryRes
     return summaries
 
 
-async def get_conversation_by_session(session_id: str) -> ConversationResponse | None:
+async def get_conversation_by_session(session_id: str, db: AsyncIOMotorDatabase) -> ConversationResponse | None:
     """
     Fetches a single full conversation document by its session_id.
 
@@ -152,7 +175,6 @@ async def get_conversation_by_session(session_id: str) -> ConversationResponse |
     Returns:
         ConversationResponse with all turns, or None if not found.
     """
-    db = get_mongo_db()
     doc = await db.conversations.find_one(
         {"session_id": session_id}, {"_id": 0}
     )
@@ -166,6 +188,8 @@ async def get_conversation_by_session(session_id: str) -> ConversationResponse |
         started_at=doc["started_at"],
         ended_at=doc.get("ended_at"),
         duration_seconds=doc.get("duration_seconds", 0),
+        time_limit_seconds=doc.get("time_limit_seconds"),
+        ended_reason=doc.get("ended_reason"),
         turn_count=doc.get("turn_count", 0),
         user_turn_count=doc.get("user_turn_count", 0),
         agent_turn_count=doc.get("agent_turn_count", 0),
@@ -184,6 +208,7 @@ async def update_conversation_insights(
     radar_data: dict | None = None,
     market_gap_data: dict | None = None,
     report_text: str | None = None,
+    db: AsyncIOMotorDatabase,
 ) -> bool:
     """
     Updates an existing conversation document with insight pipeline results.
@@ -192,7 +217,6 @@ async def update_conversation_insights(
     Returns:
         True if a document was matched and updated.
     """
-    db = get_mongo_db()
     update = {"$set": {}}
     if confidence_data is not None:
         update["$set"]["confidence_data"] = confidence_data

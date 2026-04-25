@@ -1,21 +1,26 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { login, signup } from '../lib/api';
 
 interface LoginProps {
   isDarkMode: boolean;
+  mode: 'login' | 'signup';
 }
 
-export function Login({ isDarkMode }: LoginProps) {
-  const [isSignup, setIsSignup] = useState(true);
+export function Login({ isDarkMode, mode }: LoginProps) {
+  const isSignup = mode === 'signup';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { setUser } = useAuth();
+  const { setSession } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setError('');
+  }, [mode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,12 +28,12 @@ export function Login({ isDarkMode }: LoginProps) {
     setLoading(true);
 
     try {
-      const user = isSignup
+      const session = isSignup
         ? await signup({ username, password })
         : await login({ username, password });
 
-      setUser(user);
-      navigate(user.is_onboarded ? '/' : '/onboarding');
+      setSession(session);
+      navigate(session.user.is_onboarded ? '/' : '/onboarding', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -60,6 +65,7 @@ export function Login({ isDarkMode }: LoginProps) {
               onChange={(e) => setUsername(e.target.value)}
               required
               minLength={3}
+              autoComplete="username"
               className={`w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors ${dark
                 ? 'bg-[#0a0a0a] border-gray-700 text-white focus:border-gray-500 placeholder-gray-600'
                 : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400 placeholder-gray-400'
@@ -78,7 +84,8 @@ export function Login({ isDarkMode }: LoginProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={4}
+              minLength={8}
+              autoComplete={isSignup ? 'new-password' : 'current-password'}
               className={`w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors ${dark
                 ? 'bg-[#0a0a0a] border-gray-700 text-white focus:border-gray-500 placeholder-gray-600'
                 : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-gray-400 placeholder-gray-400'
@@ -100,21 +107,23 @@ export function Login({ isDarkMode }: LoginProps) {
               : 'bg-black text-white hover:bg-gray-800'
               }`}
           >
-            {loading ? 'Please wait…' : (isSignup ? 'Sign Up' : 'Log In')}
+            {loading ? 'Please wait...' : (isSignup ? 'Sign Up' : 'Log In')}
           </button>
         </form>
 
         <p className={`text-sm text-center mt-5 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
           {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button
+          <Link
             id="login-toggle-mode"
-            onClick={() => { setIsSignup(!isSignup); setError(''); }}
+            to={isSignup ? '/login' : '/signup'}
+            onClick={() => setError('')}
             className={`font-medium transition-colors ${dark ? 'text-white hover:text-gray-300' : 'text-black hover:text-gray-600'}`}
           >
             {isSignup ? 'Log In' : 'Sign Up'}
-          </button>
+          </Link>
         </p>
       </div>
     </div>
   );
 }
+

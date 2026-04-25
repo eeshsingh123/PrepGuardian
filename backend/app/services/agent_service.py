@@ -5,6 +5,8 @@ import asyncio
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
 from google.genai import types
 from google.genai.types import Part, Content, Blob
 from google.adk.runners import Runner
@@ -14,19 +16,16 @@ from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.tools import google_search
 from google.adk.events import Event, EventActions
 
-from app.config import settings
+from app.constants import AppConstants, ModelConstants
 from app.logger import logger
 from app.prompts import AGENT_DESCRIPTION, AGENT_INSTRUCTION
 from app.services.user_service import get_user
 from app.services.conversation_service import ConversationTracker
-
-DEFAULT_TARGET_COMPANY = "Top Tech Company"
-DEFAULT_TARGET_LEVEL = "Mid-level"
-
+from app.services.live_session_service import LiveSessionService
 
 root_agent = Agent(
-    name=settings.AGENT_NAME,
-    model=settings.AGENT_MODEL,
+    name=AppConstants.AGENT_NAME,
+    model=ModelConstants.AGENT_LIVE_MODEL,
     description=AGENT_DESCRIPTION,
     instruction=AGENT_INSTRUCTION,
     tools=[google_search],
@@ -35,13 +34,13 @@ root_agent = Agent(
 session_service = InMemorySessionService()
 
 runner = Runner(
-    app_name=settings.APP_NAME,
+    app_name=AppConstants.APP_NAME,
     agent=root_agent,
     session_service=session_service,
 )
 
 
-async def start_agent_session(user_id: str, session_id: str):
+async def start_agent_session(user_id: str, session_id: str, db: AsyncIOMotorDatabase):
     """
     Creates or retrieves an existing session for the given user and starts a live
     bidirectional streaming session with the ADK runner.
@@ -54,23 +53,23 @@ async def start_agent_session(user_id: str, session_id: str):
         A tuple of (live_events async generator, LiveRequestQueue) for the session.
     """
     # Fetch user data to inject into session context for prompt instructions
-    user = await get_user(user_id)
+    user = await get_user(user_id, db=db)
     user_state = {
         "user_name": user.name or "Not specified",
         "user_experience": user.experience or "Not specified",
         "user_preferences": user.preferences or "Not specified",
-        "user_target_company": user.target_company or DEFAULT_TARGET_COMPANY,
-        "user_target_level": user.target_level or DEFAULT_TARGET_LEVEL,
+        "user_target_company": user.target_company or AppConstants.DEFAULT_TARGET_COMPANY,
+        "user_target_level": user.target_level or AppConstants.DEFAULT_TARGET_LEVEL,
     }
 
     session = await runner.session_service.get_session(
-        app_name=settings.APP_NAME,
+        app_name=AppConstants.APP_NAME,
         user_id=user_id,
         session_id=session_id,
     )
     if not session:
         session = await runner.session_service.create_session(
-            app_name=settings.APP_NAME,
+            app_name=AppConstants.APP_NAME,
             user_id=user_id,
             session_id=session_id,
             state=user_state
@@ -87,7 +86,7 @@ async def start_agent_session(user_id: str, session_id: str):
 
     run_config = RunConfig(
         streaming_mode=StreamingMode.BIDI,
-        response_modalities=settings.RESPONSE_MODALITIES,
+        response_modalities=AppConstants.RESPONSE_MODALITIES,
         session_resumption=types.SessionResumptionConfig(),
         # Enables context window compression to remove the 10-minute Vertex AI
         # session duration limit and prevent token exhaustion on long calls.
@@ -186,7 +185,10 @@ async def agent_to_client_messaging(
 
 
 async def client_to_agent_messaging(
-    websocket: WebSocket, live_request_queue: LiveRequestQueue, tracker: ConversationTracker
+    websocket: WebSocket,
+    live_request_queue: LiveRequestQueue,
+    tracker: ConversationTracker,
+    live_session_service: LiveSessionService | None = None,
 ):
     """
     Continuously reads incoming WebSocket messages from the client and forwards
@@ -199,14 +201,100 @@ async def client_to_agent_messaging(
         live_request_queue: The ADK queue used to send input to the running agent.
         tracker: ConversationTracker instance to record user text turns.
     """
+    last_time_context_sent_at = 0.0
+    last_time_context_remaining: int | None = None
+    time_context_refresh_seconds = 15.0
+
     try:
         while True:
             message_json = await websocket.receive_text()
+            if live_session_service is not None:
+                await live_session_service.refresh_session(
+                    tracker.user_id,
+                    tracker.session_id,
+                )
             message = json.loads(message_json)
             mime_type = message.get("mime_type")
             data = message.get("data")
+            time_context = message.get("time_context")
 
-            if mime_type == "text/plain":
+            if isinstance(time_context, dict):
+                raw_remaining = time_context.get("remaining_seconds")
+                raw_elapsed = time_context.get("elapsed_seconds")
+                raw_time_limit = time_context.get("time_limit_seconds")
+                if (
+                    isinstance(raw_remaining, int)
+                    and isinstance(raw_elapsed, int)
+                    and isinstance(raw_time_limit, int)
+                ):
+                    now = asyncio.get_running_loop().time()
+                    remaining_minute = raw_remaining // 60
+                    previous_remaining_minute = (
+                        last_time_context_remaining // 60
+                        if last_time_context_remaining is not None
+                        else None
+                    )
+                    should_send_time_context = (
+                        last_time_context_remaining is None
+                        or remaining_minute != previous_remaining_minute
+                        or now - last_time_context_sent_at >= time_context_refresh_seconds
+                    )
+                    if should_send_time_context:
+                        live_request_queue.send_content(
+                            content=Content(
+                                role="user",
+                                parts=[
+                                    Part.from_text(
+                                        text=(
+                                            "Silent session timer context: "
+                                            f"{raw_remaining} seconds remaining, "
+                                            f"{raw_elapsed} seconds elapsed, "
+                                            f"{raw_time_limit} seconds total. "
+                                            "Use this only to pace the interview and nudge "
+                                            "toward high-impact design areas when useful. "
+                                            "Do not answer this packet directly."
+                                        )
+                                    )
+                                ],
+                            )
+                        )
+                        last_time_context_sent_at = now
+                        last_time_context_remaining = raw_remaining
+
+            if mime_type == "application/session-control":
+                event_type = message.get("event")
+                raw_time_limit = message.get("time_limit_seconds")
+                time_limit_seconds = raw_time_limit if isinstance(raw_time_limit, int) else None
+
+                if event_type == "session_started":
+                    tracker.mark_started(time_limit_seconds)
+
+                elif event_type == "time_warning":
+                    raw_seconds_remaining = message.get("seconds_remaining")
+                    if isinstance(raw_seconds_remaining, int):
+                        tracker.mark_started(time_limit_seconds)
+                        minutes_remaining = max(1, raw_seconds_remaining // 60)
+                        warning_text = (
+                            "Session timer update: briefly tell the candidate "
+                            f"there are {minutes_remaining} minutes remaining, "
+                            "then guide them to prioritize the highest-impact parts "
+                            "of the system design discussion."
+                        )
+                        live_request_queue.send_content(
+                            content=Content(
+                                role="user",
+                                parts=[Part.from_text(text=warning_text)],
+                            )
+                        )
+
+                elif event_type == "session_ended":
+                    reason = message.get("reason")
+                    tracker.mark_ended(
+                        reason if isinstance(reason, str) else None,
+                        time_limit_seconds,
+                    )
+
+            elif mime_type == "text/plain":
                 content = Content(role="user", parts=[Part.from_text(text=data)])
                 live_request_queue.send_content(content=content)
                 tracker.add_user_turn(data)
@@ -225,7 +313,11 @@ async def client_to_agent_messaging(
 
 
 async def run_bidirectional_session(
-    websocket: WebSocket, user_id: str, session_id: str
+    websocket: WebSocket,
+    user_id: str,
+    session_id: str,
+    db: AsyncIOMotorDatabase,
+    live_session_service: LiveSessionService | None = None,
 ):
     """
     Orchestrates a full bidirectional WebSocket session between a client and the
@@ -238,15 +330,25 @@ async def run_bidirectional_session(
         user_id: Backend-generated unique identifier for the connected user.
         session_id: Frontend-generated unique identifier for this session.
     """
-    live_events, live_request_queue = await start_agent_session(user_id, session_id)
-    tracker = ConversationTracker(session_id=session_id, user_id=user_id)
+    live_events, live_request_queue = await start_agent_session(user_id, session_id, db)
+    tracker = ConversationTracker(session_id=session_id, user_id=user_id, db=db)
 
     agent_task = asyncio.create_task(
         agent_to_client_messaging(websocket, live_events, tracker)
     )
-    client_task = asyncio.create_task(
-        client_to_agent_messaging(websocket, live_request_queue, tracker)
-    )
+    if live_session_service is None:
+        client_task = asyncio.create_task(
+            client_to_agent_messaging(websocket, live_request_queue, tracker)
+        )
+    else:
+        client_task = asyncio.create_task(
+            client_to_agent_messaging(
+                websocket,
+                live_request_queue,
+                tracker,
+                live_session_service,
+            )
+        )
 
     try:
         done, pending = await asyncio.wait(

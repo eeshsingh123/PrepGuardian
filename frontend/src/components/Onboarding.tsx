@@ -29,7 +29,7 @@ export function Onboarding({ isDarkMode }: OnboardingProps) {
     setLoading(true);
 
     try {
-      const updated = await submitOnboarding(user.user_id, {
+      const updated = await submitOnboarding({
         name,
         experience,
         target_company: targetCompany,
