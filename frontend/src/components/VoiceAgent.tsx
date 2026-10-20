@@ -5,7 +5,7 @@ import { ConnectionBanner } from './live/ConnectionBanner';
 import { InterviewerBadge, type BadgeStatus } from './live/InterviewerBadge';
 import { PhaseProgress } from './live/PhaseProgress';
 import { SessionTimer } from './live/SessionTimer';
-import { SetupPanel } from './live/SetupPanel';
+import { SetupScreen } from './live/SetupScreen';
 import { useLiveSession } from './live/useLiveSession';
 
 interface VoiceAgentProps {
@@ -24,44 +24,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange }: VoiceAg
   }, [inSession, onLiveChange]);
 
   if (live.phase === 'setup') {
-    return (
-      <div className="voice-agent">
-        <span aria-live="polite" className="sr-only">
-          {live.announcement?.text ?? ''}
-        </span>
-        {live.banner && (
-          <ConnectionBanner
-            message={live.banner.message}
-            showRetry={live.banner.showRetry}
-            showSetup={live.banner.showSetup}
-            showTranscripts={live.banner.showTranscripts}
-            onRetry={() => live.retry()}
-            onSetup={live.backToSetup}
-            onTranscripts={live.goToTranscripts}
-          />
-        )}
-        <SetupPanel
-          options={live.options}
-          optionsLoading={live.optionsLoading}
-          optionsError={live.optionsError}
-          onRetryOptions={() => void live.reloadOptions()}
-          trackType={live.resolvedChoice?.trackType ?? ''}
-          durationMinutes={live.resolvedChoice?.durationMinutes ?? 0}
-          onTrackTypeChange={(trackType) =>
-            live.resolvedChoice && live.setChoice({ ...live.resolvedChoice, trackType })
-          }
-          onDurationChange={(durationMinutes) =>
-            live.resolvedChoice && live.setChoice({ ...live.resolvedChoice, durationMinutes })
-          }
-          checkingMic={live.checkingMic}
-          creatingSession={live.creatingSession}
-          micProblem={live.micProblem}
-          setupNotice={live.setupNotice}
-          onStart={() => void live.start()}
-          isDarkMode={isDarkMode}
-        />
-      </div>
-    );
+    return <SetupScreen live={live} isDarkMode={isDarkMode} />;
   }
 
   const badgeStatus: BadgeStatus =
