@@ -1,7 +1,7 @@
 import type { InterviewOptions } from '../../lib/interviewOptions';
 import { TrackCard } from './TrackCard';
 import { DurationPicker } from './DurationPicker';
-import type { MicProblem } from './useLiveSession';
+import type { MicProblem } from './useMicCapture';
 
 interface SetupPanelProps {
   options: InterviewOptions | undefined;
