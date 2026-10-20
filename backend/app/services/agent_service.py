@@ -41,6 +41,13 @@ END_OF_SPEECH_SENSITIVITY = {
     "HIGH": types.EndSensitivity.END_SENSITIVITY_HIGH,
 }
 
+MAX_CLIENT_FRAME_BYTES = 1024 * 1024
+SERVER_STOP_GRACE_SECONDS = 60
+
+
+class AgentUnavailableError(RuntimeError):
+    """Raised when the live agent session cannot be started."""
+
 
 def build_agent_instruction(context: ReadonlyContext) -> str:
     """
@@ -296,12 +303,25 @@ async def client_to_agent_messaging(
     try:
         while True:
             message_json = await websocket.receive_text()
+            if len(message_json.encode("utf-8")) > MAX_CLIENT_FRAME_BYTES:
+                logger.warning("Ignoring oversized client frame.")
+                continue
+
             if live_session_service is not None:
                 await live_session_service.refresh_session(
                     tracker.user_id,
                     tracker.session_id,
                 )
-            message = json.loads(message_json)
+
+            try:
+                message = json.loads(message_json)
+            except json.JSONDecodeError:
+                logger.warning("Ignoring malformed client frame.")
+                continue
+            if not isinstance(message, dict):
+                logger.warning("Ignoring non-object client frame.")
+                continue
+
             mime_type = message.get("mime_type")
             data = message.get("data")
 
@@ -322,16 +342,22 @@ async def client_to_agent_messaging(
                 )
                 tracker.add_user_turn(data)
                 logger.info("[CLIENT TO AGENT]: Text input received.")
-            elif isinstance(mime_type, str) and mime_type.startswith("audio/pcm"):
-                live_request_queue.send_realtime(
-                    Blob(
-                        data=base64.b64decode(data),
-                        mime_type="audio/pcm;rate=16000",
-                    )
+            elif isinstance(mime_type, str) and (
+                mime_type.startswith("audio/pcm")
+                or mime_type in ("image/jpeg", "image/png")
+            ):
+                try:
+                    decoded_data = base64.b64decode(data, validate=True)
+                except ValueError:
+                    logger.warning("Ignoring client frame with invalid base64 payload.")
+                    continue
+                forwarded_mime_type = (
+                    "audio/pcm;rate=16000"
+                    if mime_type.startswith("audio/pcm")
+                    else mime_type
                 )
-            elif mime_type in ("image/jpeg", "image/png"):
                 live_request_queue.send_realtime(
-                    Blob(data=base64.b64decode(data), mime_type=mime_type)
+                    Blob(data=decoded_data, mime_type=forwarded_mime_type)
                 )
             else:
                 logger.warning(f"Unrecognized mime type: {mime_type}")
@@ -362,12 +388,16 @@ async def run_bidirectional_session(
         live_session_service: Optional sticky-session refresher.
     """
     clock = InterviewClock(config)
-    live_events, live_request_queue = await start_agent_session(
-        user_id,
-        session_id,
-        clock,
-        db,
-    )
+    try:
+        live_events, live_request_queue = await start_agent_session(
+            user_id,
+            session_id,
+            clock,
+            db,
+        )
+    except Exception as exc:
+        raise AgentUnavailableError("Live agent session failed to start.") from exc
+
     tracker = ConversationTracker(
         session_id,
         user_id,
@@ -390,9 +420,24 @@ async def run_bidirectional_session(
         )
     )
 
+    async def stop_at_time_limit() -> None:
+        wait_seconds = (
+            clock.duration_seconds
+            + SERVER_STOP_GRACE_SECONDS
+            - clock.elapsed_seconds
+        )
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
+        tracker.mark_ended("time_limit")
+        await websocket.send_text(
+            json.dumps({"session_ended": {"reason": "time_limit"}})
+        )
+
+    stop_task = asyncio.create_task(stop_at_time_limit())
+
     try:
         done, pending = await asyncio.wait(
-            [agent_task, client_task],
+            [agent_task, client_task, stop_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:

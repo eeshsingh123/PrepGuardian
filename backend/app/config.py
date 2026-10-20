@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     INSIGHT_FLASH_MODEL: str = "gemini-3.1-flash-lite"
 
     # Live interview tuning
-    LIVE_VOICE: str = "Kore"
+    LIVE_VOICE: str = "Charon"
     LIVE_COMPRESSION_TRIGGER_TOKENS: int = 32000
     LIVE_COMPRESSION_TARGET_TOKENS: int = 16000
     LIVE_VAD_SILENCE_DURATION_MS: int = 1200

@@ -27,6 +27,8 @@ INTERVIEWER_NOTES_STATE_KEY = "interviewer_notes"
 
 CLOCK_CUE_MINUTES = (10, 5, 2)
 CUE_DEDUPE_WINDOW_SECONDS = 30
+MAX_INTERVIEWER_NOTES = 40
+MAX_NOTE_LENGTH = 300
 
 ClockSource = Callable[[], datetime]
 SleepSource = Callable[[float], Awaitable[None]]
@@ -200,12 +202,13 @@ def save_interview_note(note: str, tool_context: ToolContext) -> dict[str, objec
     Saves a short agreed fact so it survives context compression. Use it for
     confirmed requirements, entities, and design decisions.
     """
-    cleaned_note = note.strip()
+    cleaned_note = note.strip()[:MAX_NOTE_LENGTH]
     notes = list(tool_context.state.get(INTERVIEWER_NOTES_STATE_KEY) or [])
-    if cleaned_note:
-        notes.append(cleaned_note)
-        tool_context.state[INTERVIEWER_NOTES_STATE_KEY] = notes
-    return {"saved": bool(cleaned_note), "note_count": len(notes)}
+    if not cleaned_note or len(notes) >= MAX_INTERVIEWER_NOTES:
+        return {"saved": False, "note_count": len(notes)}
+    notes.append(cleaned_note)
+    tool_context.state[INTERVIEWER_NOTES_STATE_KEY] = notes
+    return {"saved": True, "note_count": len(notes)}
 
 
 class ScheduledFunctionTool(FunctionTool):

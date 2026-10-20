@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from fastapi import WebSocketException
+from fastapi import HTTPException, WebSocketException
 from google.adk.flows.llm_flows.tools._agent_tools import mark_live_async_tools_non_blocking
 from google.adk.flows.llm_flows.tools._caller import _build_function_response_content
 from google.adk.models.llm_request import LlmRequest
@@ -14,7 +14,7 @@ from google.genai.types import Blob, Part
 from app import prompts
 from app.constants import RedisConstants
 from app.interview.tracks import InterviewType
-from app.routes.agent import interview_options, websocket_endpoint, websocket_ticket
+from app.routes.agent import create_session, interview_options, websocket_endpoint
 from app.schemas import LiveSessionConfig
 from app.services.agent_service import build_candidate_state, build_run_config
 from app.services.conversation_service import ConversationTracker
@@ -27,6 +27,7 @@ from app.services.interview_session import (
     get_interview_status,
     save_interview_note,
 )
+from app.services.live_session_service import LiveSessionTicket
 
 
 START = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
@@ -134,6 +135,20 @@ class InterviewToolTests(unittest.TestCase):
                 "Entities: User, Notification, Channel",
             ],
         )
+
+    def test_notes_are_trimmed_and_capped(self):
+        context = SimpleNamespace(state={})
+
+        save_interview_note("x" * 350, context)
+        self.assertEqual(len(context.state["interviewer_notes"][0]), 300)
+
+        for index in range(1, 40):
+            save_interview_note(f"note {index}", context)
+
+        overflow = save_interview_note("one note too many", context)
+
+        self.assertEqual(overflow, {"saved": False, "note_count": 40})
+        self.assertEqual(len(context.state["interviewer_notes"]), 40)
 
 
 class CandidateStateTests(unittest.TestCase):
@@ -542,25 +557,6 @@ class ToolSchedulingTests(unittest.TestCase):
 
 
 class WebSocketConfigTests(unittest.IsolatedAsyncioTestCase):
-    async def test_invalid_interview_config_closes_before_accept(self):
-        for interview_type, duration_minutes in (
-            ("behavioral", 45),
-            ("lld", 17),
-        ):
-            with self.subTest(
-                interview_type=interview_type,
-                duration_minutes=duration_minutes,
-            ):
-                with self.assertRaises(WebSocketException) as ctx:
-                    await websocket_endpoint(
-                        object(),
-                        "sess_invalid",
-                        ticket="ticket",
-                        interview_type=interview_type,
-                        duration_minutes=duration_minutes,
-                    )
-                self.assertEqual(ctx.exception.code, 1008)
-
     async def test_missing_or_invalid_ticket_closes_before_accept(self):
         class EmptyRedis:
             async def getdel(self, key):
@@ -575,26 +571,30 @@ class WebSocketConfigTests(unittest.IsolatedAsyncioTestCase):
         for ticket in (None, "unknown"):
             with self.subTest(ticket=ticket):
                 with self.assertRaises(WebSocketException) as ctx:
-                    await websocket_endpoint(
-                        websocket,
-                        "sess_ticket",
-                        ticket=ticket,
-                        interview_type="lld",
-                        duration_minutes=30,
-                    )
+                    await websocket_endpoint(websocket, ticket=ticket)
                 self.assertEqual(ctx.exception.code, 1008)
 
     async def test_valid_ticket_opens_the_session_for_its_issuing_user(self):
         class FakeRedis:
             def __init__(self):
-                self.values = {"pg:ws-ticket:good-ticket": "pg_user"}
+                self.values = {
+                    "pg:live-session:pg_user": "sess_server",
+                }
+                self.ttls = {}
                 self.deleted = []
 
             async def getdel(self, key):
                 return self.values.pop(key, None)
 
+            async def get(self, key):
+                return self.values.get(key)
+
             async def set(self, key, value, ex=None, nx=False):
                 self.values[key] = value
+                return True
+
+            async def expire(self, key, ttl):
+                self.ttls[key] = ttl
                 return True
 
             async def delete(self, key):
@@ -603,6 +603,12 @@ class WebSocketConfigTests(unittest.IsolatedAsyncioTestCase):
                 return 1
 
         redis = FakeRedis()
+        redis.values["pg:ws-ticket:good-ticket"] = LiveSessionTicket(
+            user_id="pg_user",
+            session_id="sess_server",
+            interview_type=InterviewType.HLD,
+            duration_minutes=60,
+        ).model_dump_json()
 
         class FakeWebSocket:
             def __init__(self):
@@ -610,27 +616,27 @@ class WebSocketConfigTests(unittest.IsolatedAsyncioTestCase):
                     state=SimpleNamespace(redis=redis, mongo_db=object())
                 )
                 self.accepted = False
+                self.closed_code = None
 
             async def accept(self):
                 self.accepted = True
+
+            async def close(self, code=1000):
+                self.closed_code = code
 
         websocket = FakeWebSocket()
         with patch(
             "app.routes.agent.run_bidirectional_session",
             AsyncMock(),
         ) as run_session:
-            await websocket_endpoint(
-                websocket,
-                "sess_valid",
-                ticket="good-ticket",
-                interview_type="hld",
-                duration_minutes=60,
-            )
+            await websocket_endpoint(websocket, ticket="good-ticket")
 
         self.assertTrue(websocket.accepted)
+        self.assertEqual(websocket.closed_code, 1000)
         self.assertNotIn("pg:ws-ticket:good-ticket", redis.values)
         self.assertEqual(run_session.await_args.args[1], "pg_user")
-        self.assertEqual(run_session.await_args.args[3].interview_type.value, "hld")
+        self.assertEqual(run_session.await_args.args[2], "sess_server")
+        self.assertEqual(run_session.await_args.args[3].interview_type, InterviewType.HLD)
         self.assertEqual(run_session.await_args.args[3].duration_minutes, 60)
 
 
@@ -638,7 +644,7 @@ class InterviewOptionsRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_options_are_built_from_tracks_and_allowed_durations(self):
         options = await interview_options(SimpleNamespace(user_id="pg_user"))
 
-        self.assertEqual(options.interviewer_name, "Maya")
+        self.assertEqual(options.interviewer_name, "Aiden")
         self.assertEqual(options.durations_minutes, [30, 45, 60])
         self.assertEqual(options.default_duration_minutes, 45)
         self.assertEqual([track.type for track in options.tracks], ["lld", "hld"])
@@ -650,30 +656,78 @@ class InterviewOptionsRouteTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-class WsTicketRouteTests(unittest.IsolatedAsyncioTestCase):
-    async def test_ticket_endpoint_returns_ticket_and_ttl(self):
+class SessionRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_create_session_returns_server_id_and_ticket(self):
         class FakeRedis:
             def __init__(self):
                 self.values = {}
                 self.ttls = {}
 
-            async def set(self, key, value, ex=None):
+            async def set(self, key, value, ex=None, nx=False):
+                if nx and key in self.values:
+                    return False
                 self.values[key] = value
                 self.ttls[key] = ex
                 return True
 
         redis = FakeRedis()
+        config = LiveSessionConfig(
+            interview_type=InterviewType.HLD,
+            duration_minutes=60,
+        )
 
-        response = await websocket_ticket(
+        response = await create_session(
+            config,
             SimpleNamespace(user_id="pg_user"),
             redis,
         )
 
-        self.assertTrue(response.ticket)
+        self.assertTrue(response.session_id.startswith("sess_"))
+        self.assertEqual(len(response.session_id), len("sess_") + 32)
         self.assertEqual(response.expires_in, RedisConstants.WS_TICKET_TTL_SECONDS)
-        key = f"{RedisConstants.WS_TICKET_PREFIX}:{response.ticket}"
-        self.assertEqual(redis.values[key], "pg_user")
-        self.assertEqual(redis.ttls[key], RedisConstants.WS_TICKET_TTL_SECONDS)
+
+        active_key = f"{RedisConstants.ACTIVE_SESSION_PREFIX}:pg_user"
+        self.assertEqual(redis.values[active_key], response.session_id)
+        self.assertEqual(
+            redis.ttls[active_key],
+            RedisConstants.ACTIVE_SESSION_TTL_SECONDS,
+        )
+
+        ticket_key = f"{RedisConstants.WS_TICKET_PREFIX}:{response.ticket}"
+        self.assertEqual(
+            json.loads(redis.values[ticket_key]),
+            {
+                "user_id": "pg_user",
+                "session_id": response.session_id,
+                "interview_type": "hld",
+                "duration_minutes": 60,
+            },
+        )
+        self.assertEqual(
+            redis.ttls[ticket_key],
+            RedisConstants.WS_TICKET_TTL_SECONDS,
+        )
+
+    async def test_create_session_rejects_an_active_session(self):
+        class FakeRedis:
+            def __init__(self):
+                self.values = {f"{RedisConstants.ACTIVE_SESSION_PREFIX}:pg_user": "sess_old"}
+
+            async def set(self, key, value, ex=None, nx=False):
+                if nx and key in self.values:
+                    return False
+                self.values[key] = value
+                return True
+
+        with self.assertRaises(HTTPException) as ctx:
+            await create_session(
+                LiveSessionConfig(),
+                SimpleNamespace(user_id="pg_user"),
+                FakeRedis(),
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(ctx.exception.detail, "active_session")
 
 
 class LiveRunConfigTests(unittest.TestCase):
@@ -681,7 +735,7 @@ class LiveRunConfigTests(unittest.TestCase):
         run_config = build_run_config()
 
         voice = run_config.speech_config.voice_config.prebuilt_voice_config
-        self.assertEqual(voice.voice_name, "Kore")
+        self.assertEqual(voice.voice_name, "Charon")
 
         activity = run_config.realtime_input_config.automatic_activity_detection
         self.assertEqual(activity.silence_duration_ms, 1200)
@@ -720,5 +774,28 @@ class ConversationUpsertTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(upsert for _, _, upsert in calls))
         self.assertEqual({query["session_id"] for query, _, _ in calls}, {"sess_reconnect"})
+        self.assertEqual({query["user_id"] for query, _, _ in calls}, {"pg_user"})
         self.assertEqual(calls[-1][1]["$set"]["interview_type"], "lld")
         self.assertEqual(calls[-1][1]["$set"]["duration_minutes"], 30)
+
+    async def test_only_allowed_end_reasons_are_saved(self):
+        saved_docs = []
+
+        class FakeCollection:
+            async def update_one(self, query, update, upsert=False):
+                saved_docs.append(update["$set"])
+
+        tracker = ConversationTracker(
+            session_id="sess_reason",
+            user_id="pg_user",
+            db=SimpleNamespace(conversations=FakeCollection()),
+        )
+        tracker.add_user_turn("Hello")
+        tracker.mark_ended("something_else")
+        await tracker.save()
+
+        tracker.mark_ended("time_limit")
+        await tracker.save()
+
+        self.assertEqual(saved_docs[0]["ended_reason"], "websocket_closed")
+        self.assertEqual(saved_docs[1]["ended_reason"], "time_limit")

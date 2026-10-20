@@ -13,7 +13,11 @@ from fastapi.websockets import WebSocketDisconnect
 from app.schemas import ConversationResponse, ConversationTurn, LiveSessionConfig
 from app.routes.conversations import generate_insights
 from app.services import insight_service
-from app.services.agent_service import client_to_agent_messaging, run_bidirectional_session
+from app.services.agent_service import (
+    MAX_CLIENT_FRAME_BYTES,
+    client_to_agent_messaging,
+    run_bidirectional_session,
+)
 from app.services.conversation_service import ConversationTracker
 
 
@@ -269,7 +273,7 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                     json.dumps({
                         "mime_type": "application/session-control",
                         "event": "session_ended",
-                        "reason": "client_closed",
+                        "reason": "user_ended",
                     }),
                 ]
 
@@ -309,6 +313,67 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
             live_request_queue.realtime[0].mime_type,
             "audio/pcm;rate=16000",
         )
+
+    async def test_malformed_frames_are_ignored_without_ending_the_session(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.messages = [
+                    json.dumps(
+                        {
+                            "mime_type": "text/plain",
+                            "data": "x" * (MAX_CLIENT_FRAME_BYTES + 1),
+                        }
+                    ),
+                    "{not valid json",
+                    json.dumps(["not", "an", "object"]),
+                    json.dumps({
+                        "mime_type": "audio/pcm",
+                        "data": "%%%not-base64%%%",
+                    }),
+                    json.dumps({
+                        "mime_type": "audio/pcm",
+                        "data": base64.b64encode(b"pcm").decode("ascii"),
+                    }),
+                    json.dumps({
+                        "mime_type": "application/session-control",
+                        "event": "session_ended",
+                        "reason": "user_ended",
+                    }),
+                ]
+
+            async def receive_text(self):
+                if not self.messages:
+                    raise WebSocketDisconnect()
+                return self.messages.pop(0)
+
+        class FakeLiveRequestQueue:
+            def __init__(self):
+                self.contents = []
+                self.realtime = []
+
+            def send_content(self, content, partial=False):
+                self.contents.append(content)
+
+            def send_realtime(self, blob):
+                self.realtime.append(blob)
+
+        tracker = ConversationTracker(
+            session_id="sess_malformed",
+            user_id="pg_user",
+            db=SimpleNamespace(),
+        )
+        live_request_queue = FakeLiveRequestQueue()
+
+        await client_to_agent_messaging(
+            FakeWebSocket(),
+            live_request_queue,
+            tracker,
+        )
+
+        self.assertEqual(tracker.ended_reason, "user_ended")
+        self.assertEqual(tracker.turns, [])
+        self.assertEqual(live_request_queue.contents, [])
+        self.assertEqual(len(live_request_queue.realtime), 1)
 
 
 class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):

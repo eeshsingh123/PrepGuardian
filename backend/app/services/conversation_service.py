@@ -13,6 +13,9 @@ from app.schemas.conversations import SessionUsage
 from app.schemas.live import LiveSessionConfig
 
 
+ALLOWED_END_REASONS = frozenset({"user_ended", "timer_expired", "time_limit"})
+
+
 class ConversationTracker:
     """
     Accumulates conversation turns and usage in memory during a live session.
@@ -47,8 +50,7 @@ class ConversationTracker:
         self.ended_reason: str | None = None
 
     def mark_ended(self, reason: str | None = None):
-        if reason:
-            self.ended_reason = reason
+        self.ended_reason = reason if reason in ALLOWED_END_REASONS else None
 
     def add_user_turn(self, text: str):
         if not text or not text.strip():
@@ -158,7 +160,7 @@ class ConversationTracker:
             update["$set"]["report_text"] = report_text
 
         await self.db.conversations.update_one(
-            {"session_id": self.session_id},
+            {"session_id": self.session_id, "user_id": self.user_id},
             update,
             upsert=True,
         )

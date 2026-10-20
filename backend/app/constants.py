@@ -11,13 +11,10 @@ class AppConstants:
 
 
 class InterviewerConstants:
-    NAME = "Maya"
-    VOICE = settings.LIVE_VOICE
+    NAME = "Aiden"
 
 
 class ModelConstants:
-    AGENT_LIVE_MODEL = settings.AGENT_LIVE_MODEL
-
     INSIGHT_PRO_MODEL = settings.INSIGHT_PRO_MODEL
     INSIGHT_FLASH_MODEL = settings.INSIGHT_FLASH_MODEL
 

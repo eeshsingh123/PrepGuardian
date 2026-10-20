@@ -1,9 +1,11 @@
 import json
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from fastapi import WebSocketException
 from fastapi import status
+from fastapi.websockets import WebSocketDisconnect
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, ValidationError
 
@@ -14,8 +16,8 @@ from app.logger import logger
 from app.schemas import LiveSessionConfig
 from app.schemas.users import UserPublic
 from app.security import get_current_user
-from app.services.agent_service import run_bidirectional_session
-from app.services.live_session_service import LiveSessionService
+from app.services.agent_service import AgentUnavailableError, run_bidirectional_session
+from app.services.live_session_service import LiveSessionService, LiveSessionTicket
 
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
@@ -41,7 +43,8 @@ class InterviewOptionsResponse(BaseModel):
     tracks: list[TrackOption]
 
 
-class WsTicketResponse(BaseModel):
+class SessionStartResponse(BaseModel):
+    session_id: str
     ticket: str
     expires_in: int
 
@@ -73,47 +76,66 @@ async def interview_options(
     )
 
 
-@router.post("/ws-ticket", response_model=WsTicketResponse)
-async def websocket_ticket(
+@router.post(
+    "/sessions",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SessionStartResponse,
+)
+async def create_session(
+    config: LiveSessionConfig,
     current_user: Annotated[UserPublic, Depends(get_current_user)],
     redis: RedisDep,
-) -> WsTicketResponse:
-    ticket = await LiveSessionService(redis).issue_ws_ticket(current_user.user_id)
-    return WsTicketResponse(
+) -> SessionStartResponse:
+    service = LiveSessionService(redis)
+    session_id = f"sess_{uuid4().hex}"
+    if not await service.start_session(current_user.user_id, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="active_session",
+        )
+
+    ticket = await service.issue_session_ticket(
+        LiveSessionTicket(
+            user_id=current_user.user_id,
+            session_id=session_id,
+            interview_type=config.interview_type,
+            duration_minutes=config.duration_minutes,
+        )
+    )
+    return SessionStartResponse(
+        session_id=session_id,
         ticket=ticket,
         expires_in=RedisConstants.WS_TICKET_TTL_SECONDS,
     )
 
 
-@router.websocket("/ws/{session_id}")
+async def close_websocket(websocket: WebSocket, code: int) -> None:
+    try:
+        await websocket.close(code=code)
+    except RuntimeError:
+        return
+
+
+async def send_error_and_close(websocket: WebSocket, error: str) -> None:
+    try:
+        await websocket.send_text(json.dumps({"error": error}))
+    except (RuntimeError, WebSocketDisconnect):
+        return
+    await close_websocket(websocket, 1011)
+
+
+@router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    session_id: str,
     ticket: str | None = None,
-    interview_type: str | None = None,
-    duration_minutes: int | None = None,
 ):
     """
-    Accepts a live interview socket once the config and one-time ticket are valid.
+    Accepts a live interview socket once its one-time ticket is valid.
 
     Args:
         websocket: The incoming WebSocket connection managed by FastAPI.
-        session_id: Frontend-generated unique session identifier.
-        ticket: One-time ticket issued by `POST /agents/ws-ticket`.
-        interview_type: Interview track key (`lld` or `hld`).
-        duration_minutes: Interview length in minutes.
+        ticket: One-time ticket issued by `POST /agents/sessions`.
     """
-    config_values: dict[str, object] = {}
-    if interview_type is not None:
-        config_values["interview_type"] = interview_type
-    if duration_minutes is not None:
-        config_values["duration_minutes"] = duration_minutes
-
-    try:
-        config = LiveSessionConfig(**config_values)
-    except ValidationError as exc:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION) from exc
-
     if not ticket:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
@@ -125,32 +147,39 @@ async def websocket_endpoint(
     if db is None:
         raise WebSocketException(code=status.WS_1011_INTERNAL_ERROR)
 
-    live_session_service = LiveSessionService(redis)
-    user_id = await live_session_service.consume_ws_ticket(ticket)
-    if user_id is None:
+    service = LiveSessionService(redis)
+    session = await service.consume_session_ticket(ticket)
+    if session is None:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
-    registered = await live_session_service.register_session(user_id, session_id)
-    if not registered:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    try:
+        config = LiveSessionConfig(
+            interview_type=session.interview_type,
+            duration_minutes=session.duration_minutes,
+        )
+    except ValidationError as exc:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION) from exc
 
+    await service.refresh_session(session.user_id, session.session_id)
     await websocket.accept()
-    logger.info(f"Client {user_id} connected (session: {session_id}).")
+    logger.info(f"Client {session.user_id} connected (session: {session.session_id}).")
 
-    # If session startup fails (e.g. Gemini API unreachable), notify the client
-    # and close the socket gracefully instead of leaving it hanging.
     try:
         await run_bidirectional_session(
             websocket,
-            user_id,
-            session_id,
+            session.user_id,
+            session.session_id,
             config,
             db,
-            live_session_service,
+            service,
         )
-    except Exception as e:
-        logger.error(f"Failed to start agent session for {user_id}: {e}")
-        await websocket.send_text(json.dumps({"error": str(e)}))
-        await websocket.close(code=1011, reason="Agent session failed to start")
+    except AgentUnavailableError as exc:
+        logger.error(f"Agent unavailable for {session.user_id}: {exc}")
+        await send_error_and_close(websocket, "agent_unavailable")
+    except Exception as exc:
+        logger.error(f"Live session failed for {session.user_id}: {exc}")
+        await send_error_and_close(websocket, "internal")
+    else:
+        await close_websocket(websocket, 1000)
     finally:
-        await live_session_service.remove_session(user_id, session_id)
+        await service.remove_session(session.user_id, session.session_id)
