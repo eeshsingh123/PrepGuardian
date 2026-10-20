@@ -1,4 +1,5 @@
 import type { AuthSession, UserData } from './session';
+import type { InterviewOptions } from './interviewOptions';
 
 const AUTH_STATE_KEY = 'prepguardian.auth.state';
 const AUTH_STATE_ACTIVE = 'active';
@@ -296,4 +297,8 @@ export async function fetchConversation(sessionId: string): Promise<Conversation
 
 export async function generateInsights(sessionId: string): Promise<void> {
   await request<{ ok: boolean }>(`/conversations/${sessionId}/generate-insights`, { method: 'POST' });
+}
+
+export async function getInterviewOptions(): Promise<InterviewOptions> {
+  return request<InterviewOptions>('/agents/interview-options');
 }
