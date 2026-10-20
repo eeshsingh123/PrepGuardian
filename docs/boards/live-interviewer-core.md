@@ -17,7 +17,8 @@ both with concurrency) and duration (30 / 45 / 60). Server owns the interview cl
 | @jem-6777 Dev 2 — persona & prompts | `dev2/live-core-persona` | `backend/app/prompts.py` (delete) → `backend/app/prompts/` package (new), `backend/app/services/insight_service.py` (import line only), `backend/tests/test_prompts.py` (new), `.agents/skills/insight-generation/**` (model names only) |
 | @flo-8972 Dev 3 — frontend | `dev3/live-core-frontend` | `frontend/src/components/VoiceAgent.tsx`, `frontend/src/components/live/**` (new), `frontend/src/lib/screenFrames.ts` (new), `frontend/src/lib/interviewOptions.ts` (new), `frontend/src/lib/api.ts` (add options call only), `frontend/src/App.css` (live-screen classes only), `frontend/src/components/ConfirmationModal.tsx` (a11y), `frontend/src/App.tsx` (guard nav while live) |
 
-Shared-file order: none — no file has two owners. `insight_service.py` import line is Dev 2's only.
+Shared-file order: `backend/app/interview/tracks.py` lent to Dev 2 for review fix R1 (problem bank + phase probes move onto tracks); Dev 1 reads it only.
+Lead removes the `AGENT_INSTRUCTION` alias in `app/prompts/__init__.py` after Dev 1 merges. `insight_service.py` import line is Dev 2's only.
 
 ## Contracts (all three build against these; do not change without the lead)
 
@@ -74,8 +75,9 @@ Final: both testers run the merged integration branch, incl. a real Vertex smoke
 
 ## Status
 - [x] Base contract committed (lead)
-- [ ] UX direction (@arlo-3414) → forwarded to Dev 3
-- [ ] Dev 1 / Dev 2 / Dev 3 committed
+- [x] UX direction received and forwarded (`docs/ux/live-core-slice1.md`)
+- [ ] Dev 2 committed (round 1 done; lead review fixes R1 in progress)
+- [ ] Dev 1 / Dev 3 committed
 - [ ] Tester round 1 / round 2 sign-off
 - [ ] Merged one at a time, rebuilt after each
 - [ ] Live smoke on Vertex + usage numbers
