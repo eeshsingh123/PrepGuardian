@@ -1,38 +1,10 @@
 from app.constants import InterviewerConstants
-from app.interview.tracks import InterviewTrack, InterviewType, Phase, PhaseWindow
+from app.interview.tracks import InterviewTrack, Phase, PhaseWindow
 from app.schemas.live import CandidateContext
 
-AGENT_DESCRIPTION = "Maya, a senior engineer running a live mock interview."
+AGENT_DESCRIPTION = f"{InterviewerConstants.NAME}, a senior engineer running a live mock interview."
 
-_PROBLEM_BANK: dict[InterviewType, tuple[str, str]] = {
-    InterviewType.LLD: (
-        "parking lot, rate limiter, or elevator",
-        "entities with clear state and behavior, small APIs, rules placed with the state they protect, "
-        "and a design the candidate can walk through",
-    ),
-    InterviewType.HLD: (
-        "URL shortener or ticket booking",
-        "requirements, core entities and API, a working high-level design, and deep dives with trade-offs",
-    ),
-}
-
-_DEFAULT_PROBLEM = (
-    "one problem that fits the candidate's level and experience",
-    "a design the candidate can walk through end to end",
-)
-
-_PHASE_FOCUS: dict[InterviewType, dict[str, str]] = {
-    InterviewType.LLD: {
-        "entities": "Ask which noun owns each rule, and drop nouns that are only fields.",
-        "concurrency": "Ask what is shared, what the lock protects, and what happens when two threads "
-        "call the same method.",
-    },
-    InterviewType.HLD: {
-        "high_level_design": "Ask them to trace one request end to end.",
-        "deep_dives": "Pick two bottlenecks and ask for trade-offs.",
-        "concurrency": "Ask what happens on retries, or when two writers update the same record.",
-    },
-}
+_UNKNOWN_PROFILE_VALUE = "not specified"
 
 _CONVERSATION_RULES = """\
 Conversation rules:
@@ -79,17 +51,43 @@ Interviewer: "Think about what has to stay consistent when two reservations over
 """
 
 
+def _known(value: str) -> str | None:
+    cleaned = value.strip()
+    if not cleaned or cleaned.lower() == _UNKNOWN_PROFILE_VALUE:
+        return None
+    return cleaned
+
+
+def _profile_summary(candidate: CandidateContext) -> str:
+    values = (
+        ("Experience", candidate.experience),
+        ("Target level", candidate.target_level),
+        ("Target company", candidate.target_company),
+        ("Preferences", candidate.preferences),
+    )
+    return "; ".join(f"{label}: {known}" for label, value in values if (known := _known(value)))
+
+
+def _profile_context(candidate: CandidateContext) -> str:
+    summary = _profile_summary(candidate)
+    if summary:
+        return (
+            f"Candidate background: {summary}. Use it only as context; never invent history, "
+            "employers, projects, or opinions."
+        )
+    return "Never invent history, employers, projects, or opinions."
+
+
 def _phase_minutes(phase: Phase, duration_minutes: int) -> int:
     return max(1, round(phase.share * duration_minutes))
 
 
 def _render_phases(track: InterviewTrack, duration_minutes: int) -> str:
-    focus = _PHASE_FOCUS.get(track.type, {})
     lines = []
     for index, phase in enumerate(track.phases, start=1):
         line = f"{index}. {phase.title} (~{_phase_minutes(phase, duration_minutes)} min) - {phase.goal}"
-        if phase_focus := focus.get(phase.key):
-            line = f"{line} {phase_focus}"
+        if phase.probe:
+            line = f"{line} {phase.probe}"
         lines.append(line)
     return "\n".join(lines)
 
@@ -109,20 +107,22 @@ def build_live_instruction(
     candidate: CandidateContext,
     duration_minutes: int,
 ) -> str:
-    problems, expectations = _PROBLEM_BANK.get(track.type, _DEFAULT_PROBLEM)
+    name = _known(candidate.name)
+    name_phrase = f" with {name}" if name else ""
+    greet = "greet the candidate by name" if name else "greet the candidate"
     phases = _render_phases(track, duration_minutes)
     return f"""\
-You are {InterviewerConstants.NAME}, a senior software engineer running a live {track.title} interview with {candidate.name}. Experience: {candidate.experience}. Target level: {candidate.target_level}. Target company: {candidate.target_company}. Preferences: {candidate.preferences}.
+You are {InterviewerConstants.NAME}, a senior software engineer running a live {track.title} interview{name_phrase}.
 
-Use this profile only as background. Never invent history, employers, projects, or opinions. You are evaluating, not tutoring, and you stay in character for the whole session.
+{_profile_context(candidate)} You are evaluating, not tutoring, and you stay in character for the whole session.
 
 {_CONVERSATION_RULES}
 
 Track and problem:
-The problem bank for this track: {problems}. Choose one that fits the candidate's level and experience, and ask whether they have seen it. If they have, choose another or a close variant. You are looking for {expectations}.
+The problem bank for this track: {track.problems}. Choose one that fits the candidate's level and experience, and ask whether they have seen it. If they have, choose another or a close variant. You are looking for {track.looking_for}.
 
 Interview flow:
-Start the session yourself with a short opener of two or three sentences: greet the candidate by name, introduce yourself, name the problem, ask if they have seen it, and invite them to think out loud. Then hand the turn over and stay quiet. Do not read this flow or the phase list aloud.
+Start the session yourself with a short opener of two or three sentences: {greet}, introduce yourself, name the problem, ask if they have seen it, and invite them to think out loud. Then hand the turn over and stay quiet. Do not read this flow or the phase list aloud.
 Follow these phases. The minutes are approximate; use them for pacing, not for announcements.
 {phases}
 Move on when the phase goal is met, not because a clock says so.

@@ -1,5 +1,6 @@
 import unittest
 
+from app.constants import InterviewerConstants
 from app.interview.tracks import (
     ALLOWED_DURATIONS_MINUTES,
     TRACKS,
@@ -54,8 +55,16 @@ class LiveInstructionTests(unittest.TestCase):
         custom_track = InterviewTrack(
             type=InterviewType.LLD,
             title="Custom Track",
+            problems="a custom problem",
+            looking_for="a custom outcome",
             phases=(
-                Phase("requirements", "Discovery", 0.5, "Find the core problem."),
+                Phase(
+                    "requirements",
+                    "Discovery",
+                    0.5,
+                    "Find the core problem.",
+                    probe="Ask for a concrete example.",
+                ),
                 Phase("wrap_up", "Close", 0.5, "Close cleanly."),
             ),
         )
@@ -63,8 +72,20 @@ class LiveInstructionTests(unittest.TestCase):
         text = build_live_instruction(custom_track, CANDIDATE, 45)
 
         self.assertIn("Custom Track", text)
+        self.assertIn("a custom problem", text)
+        self.assertIn("a custom outcome", text)
         self.assertIn("Discovery", text)
+        self.assertIn("Ask for a concrete example.", text)
         self.assertIn("Close", text)
+
+    def test_problem_and_probe_data_come_from_the_track(self):
+        for track in TRACKS.values():
+            text = build_live_instruction(track, CANDIDATE, 45)
+            self.assertIn(track.problems, text)
+            self.assertIn(track.looking_for, text)
+            for phase in track.phases:
+                if phase.probe:
+                    self.assertIn(phase.probe, text)
 
     def test_no_template_placeholders_remain(self):
         for track in TRACKS.values():
@@ -77,6 +98,40 @@ class LiveInstructionTests(unittest.TestCase):
 
         for value in CANDIDATE.model_dump().values():
             self.assertIn(value, text)
+        self.assertIn("Candidate background:", text)
+        self.assertIn("greet the candidate by name", text)
+
+    def test_unknown_candidate_renders_no_placeholder_text(self):
+        text = build_live_instruction(get_track(InterviewType.LLD), CandidateContext(), 30)
+        first_line = text.splitlines()[0]
+
+        self.assertNotIn("Not specified", text)
+        self.assertNotIn("not specified", text.lower())
+        self.assertNotIn("Candidate background:", text)
+        self.assertNotIn("greet the candidate by name", text)
+        self.assertIn("greet the candidate,", text)
+        self.assertEqual(
+            first_line,
+            f"You are {InterviewerConstants.NAME}, a senior software engineer running a live "
+            "Low-Level Design interview.",
+        )
+
+    def test_partial_profile_renders_only_known_fields(self):
+        candidate = CandidateContext(experience="8 years")
+        text = build_live_instruction(get_track(InterviewType.LLD), candidate, 30)
+
+        self.assertIn("Experience: 8 years", text)
+        self.assertNotIn("Not specified", text)
+        self.assertNotIn("greet the candidate by name", text)
+        self.assertNotIn("interview with", text.splitlines()[0])
+
+    def test_blank_profile_values_are_treated_as_unknown(self):
+        candidate = CandidateContext(name="  ", experience="")
+        text = build_live_instruction(get_track(InterviewType.LLD), candidate, 30)
+
+        self.assertNotIn("Candidate background:", text)
+        self.assertNotIn("greet the candidate by name", text)
+        self.assertTrue(text.splitlines()[0].endswith("interview."))
 
     def test_required_tools_are_named(self):
         text = build_live_instruction(get_track(InterviewType.LLD), CANDIDATE, 45)
@@ -84,8 +139,11 @@ class LiveInstructionTests(unittest.TestCase):
         self.assertIn("get_interview_status()", text)
         self.assertIn("save_interview_note(note)", text)
 
-    def test_agent_description_names_the_interviewer(self):
-        self.assertIn("Maya", AGENT_DESCRIPTION)
+    def test_agent_description_uses_the_interviewer_name(self):
+        self.assertEqual(
+            AGENT_DESCRIPTION,
+            f"{InterviewerConstants.NAME}, a senior engineer running a live mock interview.",
+        )
 
 
 class ClockCueTests(unittest.TestCase):

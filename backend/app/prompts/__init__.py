@@ -14,7 +14,7 @@ from app.schemas.live import CandidateContext
 
 AGENT_INSTRUCTION = build_live_instruction(
     LLD_TRACK,
-    CandidateContext(name="the candidate"),
+    CandidateContext(),
     DEFAULT_DURATION_MINUTES,
 )
 
