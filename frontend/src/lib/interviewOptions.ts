@@ -54,8 +54,9 @@ export function saveInterviewChoice(choice: InterviewChoice): void {
   }
 }
 
-export function resolveChoice(options: InterviewOptions, stored: InterviewChoice | null): InterviewChoice {
+export function resolveChoice(options: InterviewOptions, stored: InterviewChoice | null): InterviewChoice | null {
   const track = options.tracks.find((t) => t.type === stored?.trackType) ?? options.tracks[0];
+  if (!track) return null;
   const durationMinutes = options.durations_minutes.includes(stored?.durationMinutes ?? -1)
     ? (stored as InterviewChoice).durationMinutes
     : options.default_duration_minutes;

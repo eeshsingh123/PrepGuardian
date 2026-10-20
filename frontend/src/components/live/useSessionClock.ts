@@ -29,7 +29,7 @@ export function useSessionClock({ ticking, countingDown, announce, onFirstFrame,
   const [nowMs, setNowMs] = useState(0);
   const lastPhaseIndexRef = useRef<number | null>(null);
   const announcedMarksRef = useRef<Set<string>>(new Set());
-  const timeUpAtRef = useRef<number | null>(null);
+  const graceTimeoutRef = useRef<number | null>(null);
   const expiredRef = useRef(onExpired);
 
   useEffect(() => {
@@ -40,7 +40,10 @@ export function useSessionClock({ ticking, countingDown, announce, onFirstFrame,
     setClock(null);
     lastPhaseIndexRef.current = null;
     announcedMarksRef.current = new Set();
-    timeUpAtRef.current = null;
+    if (graceTimeoutRef.current !== null) {
+      window.clearTimeout(graceTimeoutRef.current);
+      graceTimeoutRef.current = null;
+    }
   }, []);
 
   const receiveFrame = useCallback(
@@ -66,6 +69,12 @@ export function useSessionClock({ ticking, countingDown, announce, onFirstFrame,
     return () => window.clearInterval(id);
   }, [ticking, clock]);
 
+  useEffect(() => () => {
+    if (graceTimeoutRef.current !== null) {
+      window.clearTimeout(graceTimeoutRef.current);
+    }
+  }, []);
+
   const elapsedSeconds = clock
     ? Math.min(clock.duration_seconds, Math.max(0, clock.elapsed_seconds + (nowMs - arrivedAt) / 1000))
     : 0;
@@ -90,9 +99,12 @@ export function useSessionClock({ ticking, countingDown, announce, onFirstFrame,
     if (!announcedMarksRef.current.has("Time's up.")) {
       announcedMarksRef.current.add("Time's up.");
       announce("Time's up.");
-      timeUpAtRef.current = performance.now();
-    } else if (timeUpAtRef.current !== null && performance.now() - timeUpAtRef.current >= GRACE_AFTER_ZERO_MS) {
-      expiredRef.current();
+      if (graceTimeoutRef.current !== null) {
+        window.clearTimeout(graceTimeoutRef.current);
+      }
+      graceTimeoutRef.current = window.setTimeout(() => {
+        expiredRef.current();
+      }, GRACE_AFTER_ZERO_MS);
     }
   }, [announce, clock, countingDown, remainingSeconds]);
 
