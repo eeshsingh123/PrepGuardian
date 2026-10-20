@@ -164,9 +164,22 @@ export function setInMemoryAccessToken(token: string | null) {
   }
 }
 
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 async function parseError(response: Response): Promise<Error> {
-  const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-  return new Error(error.detail || `HTTP ${response.status}`);
+  const body = await response.json().catch(() => ({ detail: 'Request failed' }));
+  const detail = typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`;
+  return new ApiError(response.status, detail);
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -301,4 +314,22 @@ export async function generateInsights(sessionId: string): Promise<void> {
 
 export async function getInterviewOptions(): Promise<InterviewOptions> {
   return request<InterviewOptions>('/agents/interview-options');
+}
+
+export interface CreateLiveSessionPayload {
+  interview_type: string;
+  duration_minutes: number;
+}
+
+export interface LiveSessionTicket {
+  session_id: string;
+  ticket: string;
+  expires_in: number;
+}
+
+export async function createLiveSession(payload: CreateLiveSessionPayload): Promise<LiveSessionTicket> {
+  return request<LiveSessionTicket>('/agents/sessions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
