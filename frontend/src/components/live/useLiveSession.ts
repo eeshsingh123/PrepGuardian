@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { getInterviewOptions } from '../../lib/api';
+import { getInterviewOptions, createLiveSession, ApiError } from '../../lib/api';
 import {
   loadInterviewChoice,
   phaseWindows,
@@ -12,7 +12,6 @@ import {
   type InterviewTrackOption,
 } from '../../lib/interviewOptions';
 import { logger } from '../../lib/logger';
-import { useAuth } from '../../lib/auth';
 import { useAnnouncer } from './useAnnouncer';
 import { useAudioPlayback } from './useAudioPlayback';
 import { useMicCapture } from './useMicCapture';
@@ -33,13 +32,15 @@ export interface SessionBanner {
 }
 
 interface ServerMessage {
-  error?: unknown;
+  error?: string;
   interrupted?: boolean;
   mime_type?: string;
   is_transcript?: boolean;
+  partial?: boolean;
   data?: string;
   turn_complete?: boolean;
   session_clock?: SessionClockFrame;
+  session_ended?: { reason?: string };
 }
 
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -59,14 +60,15 @@ export function useLiveSession({
   onSessionEnded?: () => void;
   previewVideoRef: RefObject<HTMLVideoElement | null>;
 }) {
-  const { accessToken } = useAuth();
   const navigate = useNavigate();
 
   const [phase, setPhase] = useState<LivePhase>('setup');
   const [choice, setChoiceState] = useState<InterviewChoice | null>(() => loadInterviewChoice());
   const [checkingMic, setCheckingMic] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const [setupNotice, setSetupNotice] = useState<string | null>(null);
   const [agentVoice, setAgentVoice] = useState<AgentVoiceState>('idle');
+  const [joined, setJoined] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [banner, setBanner] = useState<SessionBanner | null>(null);
   const [showEndModal, setShowEndModal] = useState(false);
@@ -78,6 +80,7 @@ export function useLiveSession({
   const expectedCloseRef = useRef(false);
   const connectTimeoutRef = useRef<number | null>(null);
   const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnBoundaryRef = useRef(false);
   const onSessionEndedRef = useRef(onSessionEnded);
 
   useEffect(() => {
@@ -192,6 +195,14 @@ export function useLiveSession({
   });
   const { receiveFrame, resetClock } = sessionClock;
 
+  const goToTranscripts = useCallback(() => {
+    closeSocket();
+    stopMic();
+    stopShare(false);
+    stopPlayback();
+    navigate('/transcripts');
+  }, [closeSocket, stopMic, navigate, stopPlayback, stopShare]);
+
   const markSpeaking = useCallback(() => {
     setAgentVoice('agent_speaking');
     if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
@@ -202,6 +213,10 @@ export function useLiveSession({
 
   const handleServerMessage = useCallback(
     (msg: ServerMessage) => {
+      if (msg.session_ended) {
+        goToTranscripts();
+        return;
+      }
       if (msg.error !== undefined) {
         logger.error('Agent error:', msg.error);
         closeSocket();
@@ -230,10 +245,22 @@ export function useLiveSession({
         return;
       }
       if (msg.mime_type === 'text/plain' && msg.is_transcript) {
-        setTranscript(msg.data ?? '');
+        const text = msg.data ?? '';
+        if (msg.partial) {
+          if (turnBoundaryRef.current) {
+            turnBoundaryRef.current = false;
+            setTranscript(text);
+          } else {
+            setTranscript((prev) => prev + text);
+          }
+        } else {
+          turnBoundaryRef.current = true;
+          setTranscript(text);
+        }
         return;
       }
       if (msg.mime_type === 'audio/pcm') {
+        setJoined(true);
         playChunk(msg.data ?? '');
         markSpeaking();
         return;
@@ -245,7 +272,7 @@ export function useLiveSession({
         }, 300);
       }
     },
-    [clearConnectTimeout, closeSocket, markSpeaking, micMuted, stopMic, playChunk, stopPlayback, stopShare, receiveFrame],
+    [clearConnectTimeout, closeSocket, goToTranscripts, markSpeaking, micMuted, stopMic, playChunk, stopPlayback, stopShare, receiveFrame],
   );
   const handleServerMessageRef = useRef(handleServerMessage);
   useEffect(() => {
@@ -253,23 +280,18 @@ export function useLiveSession({
   }, [handleServerMessage]);
 
   const openSocket = useCallback(
-    (sessionChoice: InterviewChoice) => {
-      if (!accessToken) return;
+    (ticket: string) => {
       expectedCloseRef.current = false;
       endedRef.current = false;
-      const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      const wsUrl =
-        `${wsBaseUrl()}/agents/ws/${sessionId}` +
-        `?token=${encodeURIComponent(accessToken)}` +
-        `&interview_type=${encodeURIComponent(sessionChoice.trackType)}` +
-        `&duration_minutes=${sessionChoice.durationMinutes}`;
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(`${wsBaseUrl()}/agents/ws?ticket=${encodeURIComponent(ticket)}`);
       wsRef.current = ws;
       phaseRef.current = 'connecting';
       setPhase('connecting');
       setBanner(null);
       resetClock();
       clockReceivedRef.current = false;
+      setJoined(false);
+      turnBoundaryRef.current = false;
       clearConnectTimeout();
       connectTimeoutRef.current = window.setTimeout(() => {
         if (phaseRef.current === 'connecting' && !clockReceivedRef.current) {
@@ -293,6 +315,7 @@ export function useLiveSession({
       ws.onclose = (event) => {
         clearConnectTimeout();
         if (expectedCloseRef.current || endedRef.current) return;
+        if (event.code === 1000) return;
         if (!clockReceivedRef.current && event.code === 1008) {
           closeSocket();
           stopMic();
@@ -329,7 +352,7 @@ export function useLiveSession({
         logger.error('WebSocket error');
       };
     },
-    [accessToken, clearConnectTimeout, closeSocket, stopMic, stopPlayback, stopShare, resetClock],
+    [clearConnectTimeout, closeSocket, stopMic, stopPlayback, stopShare, resetClock],
   );
 
   const setChoice = useCallback((next: InterviewChoice) => {
@@ -338,7 +361,7 @@ export function useLiveSession({
   }, []);
 
   const start = useCallback(async () => {
-    if (!resolvedChoice || !accessToken) return;
+    if (!resolvedChoice) return;
     setSetupNotice(null);
     clearMicProblem();
     if (!hasStream()) {
@@ -349,17 +372,41 @@ export function useLiveSession({
     } else {
       setBanner((current) => (current?.kind === 'mic' ? null : current));
     }
-    openSocket(resolvedChoice);
-  }, [accessToken, clearMicProblem, hasStream, openSocket, resolvedChoice, startMic]);
-
-  const retry = useCallback(() => {
-    if (!resolvedChoice) return;
-    if (!hasStream()) {
-      void start();
+    setCreatingSession(true);
+    let ticket: string;
+    try {
+      const session = await createLiveSession({
+        interview_type: resolvedChoice.trackType,
+        duration_minutes: resolvedChoice.durationMinutes,
+      });
+      ticket = session.ticket;
+    } catch (err) {
+      setCreatingSession(false);
+      if (err instanceof ApiError && err.status === 422) {
+        setSetupNotice("That setup isn't valid anymore. Please choose again.");
+        return;
+      }
+      if (err instanceof ApiError && err.status === 409 && err.detail.includes('active_session')) {
+        setSetupNotice('You already have an interview running in another tab. End it there, then try again.');
+        return;
+      }
+      logger.error('Error creating live session', err);
+      setBanner({
+        kind: 'connection',
+        message: "We couldn't reach the interview. Check your connection and try again.",
+        showRetry: true,
+        showSetup: true,
+        showTranscripts: false,
+      });
       return;
     }
-    openSocket(resolvedChoice);
-  }, [hasStream, openSocket, resolvedChoice, start]);
+    setCreatingSession(false);
+    openSocket(ticket);
+  }, [clearMicProblem, hasStream, openSocket, resolvedChoice, startMic]);
+
+  const retry = useCallback(() => {
+    void start();
+  }, [start]);
 
   const cancelConnecting = useCallback(() => {
     closeSocket();
@@ -378,14 +425,6 @@ export function useLiveSession({
     phaseRef.current = 'setup';
     setPhase('setup');
   }, [closeSocket, stopMic, stopPlayback, stopShare]);
-
-  const goToTranscripts = useCallback(() => {
-    closeSocket();
-    stopMic();
-    stopShare(false);
-    stopPlayback();
-    navigate('/transcripts');
-  }, [closeSocket, stopMic, navigate, stopPlayback, stopShare]);
 
   const requestEnd = useCallback(() => {
     if (phaseRef.current === 'connecting') {
@@ -459,6 +498,7 @@ export function useLiveSession({
     selectedTrack,
     interviewerName,
     checkingMic,
+    creatingSession,
     micProblem: mic.micProblem,
     setupNotice,
     clock: sessionClock.clock,
@@ -467,6 +507,7 @@ export function useLiveSession({
     timeUp: sessionClock.timeUp,
     currentFill,
     agentVoice,
+    joined,
     muted: micMuted,
     speakerMuted: playback.speakerMuted,
     isSharing: screen.isSharing,
