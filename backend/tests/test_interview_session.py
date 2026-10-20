@@ -11,12 +11,13 @@ from app import prompts
 from app.interview.tracks import InterviewType
 from app.routes.agent import interview_options, websocket_endpoint
 from app.schemas import LiveSessionConfig
-from app.services.agent_service import build_run_config
+from app.services.agent_service import build_candidate_state, build_run_config
 from app.services.conversation_service import ConversationTracker
 from app.services.interview_session import (
     CueScheduler,
     InterviewClock,
     build_clock_state,
+    candidate_context_from_state,
     get_interview_status,
     save_interview_note,
 )
@@ -129,10 +130,73 @@ class InterviewToolTests(unittest.TestCase):
         )
 
 
+class CandidateStateTests(unittest.TestCase):
+    def test_unknown_profile_fields_stay_blank(self):
+        user = SimpleNamespace(
+            name=None,
+            experience="",
+            target_company=None,
+            target_level="   ",
+            preferences=None,
+        )
+
+        state = build_candidate_state(user)
+
+        self.assertEqual(
+            state,
+            {
+                "user_name": "",
+                "user_experience": "",
+                "user_preferences": "",
+                "user_target_company": "",
+                "user_target_level": "",
+            },
+        )
+        candidate = candidate_context_from_state(state)
+        self.assertEqual(
+            [
+                candidate.name,
+                candidate.experience,
+                candidate.preferences,
+                candidate.target_company,
+                candidate.target_level,
+            ],
+            ["", "", "", "", ""],
+        )
+
+    def test_known_profile_fields_are_trimmed(self):
+        user = SimpleNamespace(
+            name=" Eesh ",
+            experience=" 8 years ",
+            target_company="Google",
+            target_level="Senior",
+            preferences=" LLD ",
+        )
+
+        state = build_candidate_state(user)
+
+        self.assertEqual(state["user_name"], "Eesh")
+        self.assertEqual(state["user_experience"], "8 years")
+        self.assertEqual(state["user_preferences"], "LLD")
+        self.assertEqual(state["user_target_company"], "Google")
+        self.assertEqual(state["user_target_level"], "Senior")
+
+
 class CueSchedulerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_scheduler_sends_phase_frames_and_partial_time_cues(self):
+    async def run_scheduler(
+        self,
+        interview_type: InterviewType,
+        duration_minutes: int = 30,
+    ) -> tuple[FakeWebSocket, FakeLiveRequestQueue]:
         now = FakeNow()
-        clock = build_clock(now)
+        clock = InterviewClock(
+            LiveSessionConfig(
+                interview_type=interview_type,
+                duration_minutes=duration_minutes,
+            ),
+            started_at=START,
+            now=now,
+        )
         websocket = FakeWebSocket()
         live_request_queue = FakeLiveRequestQueue()
 
@@ -157,13 +221,22 @@ class CueSchedulerTests(unittest.IsolatedAsyncioTestCase):
         ):
             await scheduler.run()
 
-        self.assertEqual(len(live_request_queue.contents), 3)
+        return websocket, live_request_queue
+
+    async def test_scheduler_sends_phase_frames_and_partial_phase_and_time_cues(self):
+        websocket, live_request_queue = await self.run_scheduler(InterviewType.LLD)
+
         self.assertTrue(all(partial for _, partial in live_request_queue.contents))
         self.assertEqual(
             [content.parts[0].text for content, _ in live_request_queue.contents],
             [
+                "cue:27:entities",
+                "cue:24:class_design",
+                "cue:15:implementation",
                 "cue:10:implementation",
+                "cue:8:concurrency",
                 "cue:5:concurrency",
+                "cue:4:extensibility",
                 "cue:2:extensibility",
             ],
         )
@@ -172,10 +245,35 @@ class CueSchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(clock_frames), 7)
         self.assertEqual(clock_frames[0]["phase_key"], "requirements")
         self.assertEqual(clock_frames[0]["phase_index"], 0)
+        self.assertEqual(clock_frames[0]["elapsed_seconds"], 0)
+        self.assertEqual(clock_frames[1]["phase_key"], "entities")
+        self.assertEqual(clock_frames[1]["elapsed_seconds"], 216)
         self.assertEqual(clock_frames[-1]["phase_key"], "wrap_up")
         self.assertEqual(clock_frames[-1]["phase_index"], 6)
         self.assertEqual(clock_frames[-1]["phase_count"], 7)
         self.assertEqual(clock_frames[-1]["duration_seconds"], 1800)
+        self.assertTrue(all("started_at" in frame for frame in clock_frames))
+
+    async def test_phase_cue_is_skipped_when_a_minute_cue_is_within_thirty_seconds(self):
+        websocket, live_request_queue = await self.run_scheduler(InterviewType.HLD)
+
+        self.assertTrue(all(partial for _, partial in live_request_queue.contents))
+        self.assertEqual(
+            [content.parts[0].text for content, _ in live_request_queue.contents],
+            [
+                "cue:26:entities_api",
+                "cue:23:high_level_design",
+                "cue:14:deep_dives",
+                "cue:10:deep_dives",
+                "cue:5:concurrency",
+                "cue:2:concurrency",
+            ],
+        )
+
+        clock_frames = [frame["session_clock"] for frame in websocket.frames]
+        self.assertEqual(len(clock_frames), 6)
+        self.assertEqual(clock_frames[-1]["phase_key"], "wrap_up")
+        self.assertEqual(clock_frames[-1]["elapsed_seconds"], 1692)
 
 
 class MultiPartEventTests(unittest.IsolatedAsyncioTestCase):
@@ -299,6 +397,7 @@ class InterviewOptionsRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_options_are_built_from_tracks_and_allowed_durations(self):
         options = await interview_options(SimpleNamespace(user_id="pg_user"))
 
+        self.assertEqual(options.interviewer_name, "Maya")
         self.assertEqual(options.durations_minutes, [30, 45, 60])
         self.assertEqual(options.default_duration_minutes, 45)
         self.assertEqual([track.type for track in options.tracks], ["lld", "hld"])

@@ -6,6 +6,7 @@ from fastapi import status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, ValidationError
 
+from app.constants import InterviewerConstants
 from app.interview.tracks import ALLOWED_DURATIONS_MINUTES, DEFAULT_DURATION_MINUTES, TRACKS
 from app.logger import logger
 from app.schemas import LiveSessionConfig
@@ -32,6 +33,7 @@ class TrackOption(BaseModel):
 
 
 class InterviewOptionsResponse(BaseModel):
+    interviewer_name: str
     durations_minutes: list[int]
     default_duration_minutes: int
     tracks: list[TrackOption]
@@ -42,6 +44,7 @@ async def interview_options(
     current_user: UserPublic = Depends(get_current_user),
 ) -> InterviewOptionsResponse:
     return InterviewOptionsResponse(
+        interviewer_name=InterviewerConstants.NAME,
         durations_minutes=list(ALLOWED_DURATIONS_MINUTES),
         default_duration_minutes=DEFAULT_DURATION_MINUTES,
         tracks=[

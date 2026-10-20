@@ -3,6 +3,7 @@ import json
 import math
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import WebSocket
 from google.adk.agents import LiveRequestQueue
@@ -20,9 +21,11 @@ INTERVIEW_STARTED_AT_STATE_KEY = "interview_started_at"
 INTERVIEWER_NOTES_STATE_KEY = "interviewer_notes"
 
 CLOCK_CUE_MINUTES = (10, 5, 2)
+CUE_DEDUPE_WINDOW_SECONDS = 30
 
 ClockSource = Callable[[], datetime]
 SleepSource = Callable[[float], Awaitable[None]]
+CueKind = Literal["phase", "minute"]
 
 
 class InterviewClock:
@@ -115,18 +118,18 @@ def interview_clock_from_state(state, now: ClockSource | None = None) -> Intervi
 
 def candidate_context_from_state(state) -> CandidateContext:
     """
-    Reads the candidate profile stored in ADK session state.
+    Reads the candidate profile stored in ADK session state. Unknown fields stay
+    blank so the live prompt omits them instead of presenting invented facts.
 
     Args:
         state: ADK ReadonlyContext.state.
     """
-    defaults = CandidateContext()
     return CandidateContext(
-        name=state.get("user_name") or defaults.name,
-        experience=state.get("user_experience") or defaults.experience,
-        target_company=state.get("user_target_company") or defaults.target_company,
-        target_level=state.get("user_target_level") or defaults.target_level,
-        preferences=state.get("user_preferences") or defaults.preferences,
+        name=state.get("user_name") or "",
+        experience=state.get("user_experience") or "",
+        target_company=state.get("user_target_company") or "",
+        target_level=state.get("user_target_level") or "",
+        preferences=state.get("user_preferences") or "",
     )
 
 
@@ -155,6 +158,7 @@ def build_session_clock_payload(clock: InterviewClock) -> dict[str, dict[str, st
     return {
         "session_clock": {
             "started_at": clock.started_at.isoformat(),
+            "elapsed_seconds": clock.elapsed_seconds,
             "duration_seconds": clock.duration_seconds,
             "phase_key": window.phase.key,
             "phase_title": window.phase.title,
@@ -201,7 +205,8 @@ def save_interview_note(note: str, tool_context: ToolContext) -> dict[str, objec
 
 class CueScheduler:
     """
-    Sends phase updates and time milestones without forcing a model turn.
+    Sends browser phase frames and silent model pacing cues at phase boundaries
+    and time milestones without forcing a model turn.
 
     Args:
         clock: Server-owned interview clock.
@@ -225,25 +230,47 @@ class CueScheduler:
 
     async def run(self) -> None:
         await self.send_clock_frame()
-        for at_seconds, cue_minutes in self.build_events():
+        events = self.build_events()
+        minute_cue_times = [
+            at_seconds for at_seconds, kind in events if kind == "minute"
+        ]
+        for at_seconds, kind in events:
             await self.wait_until(at_seconds)
-            if cue_minutes is None:
+            if kind == "phase":
                 await self.send_clock_frame()
-            else:
-                self.send_cue(cue_minutes)
+                if self.is_near_minute_cue(at_seconds, minute_cue_times):
+                    continue
+            self.send_cue(self.remaining_minutes())
 
-    def build_events(self) -> list[tuple[int, int | None]]:
+    def build_events(self) -> list[tuple[int, CueKind]]:
         windows = self.clock.windows
         duration_seconds = self.clock.duration_seconds
-        events: list[tuple[int, int | None]] = [
-            (window.start_seconds, None) for window in windows[1:]
+        events: list[tuple[int, CueKind]] = [
+            (window.start_seconds, "phase") for window in windows[1:]
         ]
         events.extend(
-            (duration_seconds - minutes * 60, minutes)
+            (duration_seconds - minutes * 60, "minute")
             for minutes in CLOCK_CUE_MINUTES
             if 0 < duration_seconds - minutes * 60 < duration_seconds
         )
         return sorted(events, key=lambda event: event[0])
+
+    def is_near_minute_cue(
+        self,
+        elapsed_seconds: int,
+        minute_cue_times: list[int],
+    ) -> bool:
+        """
+        Avoids stacking a phase cue on a minute cue that is already sent or due
+        within the dedupe window. The minute cue always wins.
+        """
+        return any(
+            abs(elapsed_seconds - cue_at) <= CUE_DEDUPE_WINDOW_SECONDS
+            for cue_at in minute_cue_times
+        )
+
+    def remaining_minutes(self) -> int:
+        return math.ceil(self.clock.remaining_seconds / 60)
 
     async def wait_until(self, elapsed_seconds: int) -> None:
         while self.clock.elapsed_seconds < elapsed_seconds:

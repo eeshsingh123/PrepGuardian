@@ -20,6 +20,7 @@ from app.config import settings
 from app.constants import AppConstants
 from app.interview.tracks import get_track
 from app.logger import logger
+from app.schemas import UserPublic
 from app.schemas.live import LiveSessionConfig
 from app.services.conversation_service import ConversationTracker
 from app.services.interview_session import (
@@ -72,6 +73,23 @@ runner = Runner(
 )
 
 
+def build_candidate_state(user: UserPublic) -> dict[str, str]:
+    """
+    Builds the candidate profile stored in ADK session state. Unknown fields
+    stay blank so the live prompt omits them instead of presenting them as facts.
+
+    Args:
+        user: Authenticated user profile.
+    """
+    return {
+        "user_name": (user.name or "").strip(),
+        "user_experience": (user.experience or "").strip(),
+        "user_preferences": (user.preferences or "").strip(),
+        "user_target_company": (user.target_company or "").strip(),
+        "user_target_level": (user.target_level or "").strip(),
+    }
+
+
 def build_run_config() -> RunConfig:
     return RunConfig(
         response_modalities=AppConstants.RESPONSE_MODALITIES,
@@ -122,13 +140,7 @@ async def start_agent_session(
         The live event stream and request queue for this interview.
     """
     user = await get_user(user_id, db=db)
-    candidate_state = {
-        "user_name": user.name or "Not specified",
-        "user_experience": user.experience or "Not specified",
-        "user_preferences": user.preferences or "Not specified",
-        "user_target_company": user.target_company or AppConstants.DEFAULT_TARGET_COMPANY,
-        "user_target_level": user.target_level or AppConstants.DEFAULT_TARGET_LEVEL,
-    }
+    candidate_state = build_candidate_state(user)
     clock_state = build_clock_state(clock)
 
     session = await runner.session_service.get_session(
