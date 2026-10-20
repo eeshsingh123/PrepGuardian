@@ -12,9 +12,10 @@ interface VoiceAgentProps {
   isDarkMode: boolean;
   onSessionEnded?: () => void;
   onLiveChange?: (isLive: boolean) => void;
+  endRequestRef?: { current: (() => void) | null };
 }
 
-export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange }: VoiceAgentProps) {
+export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange, endRequestRef }: VoiceAgentProps) {
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const live = useLiveSession({ onSessionEnded, previewVideoRef });
   const inSession = live.phase === 'live' || live.phase === 'connecting';
@@ -22,6 +23,14 @@ export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange }: VoiceAg
   useEffect(() => {
     onLiveChange?.(inSession);
   }, [inSession, onLiveChange]);
+
+  useEffect(() => {
+    if (!endRequestRef) return;
+    endRequestRef.current = live.requestEnd;
+    return () => {
+      endRequestRef.current = null;
+    };
+  }, [endRequestRef, live.requestEnd]);
 
   if (live.phase === 'setup') {
     return <SetupScreen live={live} isDarkMode={isDarkMode} />;

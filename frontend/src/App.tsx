@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { VoiceAgent } from './components/VoiceAgent';
@@ -15,6 +15,24 @@ function App() {
   const { user, isLoading, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const endRequestRef = useRef<(() => void) | null>(null);
+  const isLiveRef = useRef(false);
+
+  useEffect(() => {
+    isLiveRef.current = isLiveSession;
+  }, [isLiveSession]);
+
+  useEffect(() => {
+    if (!isLiveSession) return;
+    window.history.pushState({ prepGuardianLive: true }, '');
+    const onPopState = () => {
+      if (!isLiveRef.current) return;
+      window.history.pushState({ prepGuardianLive: true }, '');
+      endRequestRef.current?.();
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isLiveSession]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -49,7 +67,7 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-[#0a0a0a] text-gray-100' : 'bg-gray-50 text-gray-900'} font-sans`}>
       <header className={`border-b px-6 py-4 ${isDarkMode ? 'bg-[#0a0a0a] border-gray-800' : 'bg-white border-gray-200'}`}>
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 flex items-center justify-center font-bold text-lg tracking-tighter ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}>
               PG
@@ -58,7 +76,7 @@ function App() {
               PrepGuardian
             </h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {/* Navigation links shown only when logged in and past onboarding.
                 Hidden while a live interview runs so a click can't silently kill the session. */}
             {user && !isAuthPage && !isOnboardingPage && !isLiveSession && (
@@ -94,10 +112,13 @@ function App() {
             </button>
             {user && !isAuthPage && (
               <button
-                onClick={() => void handleLogout()}
+                onClick={() => {
+                  if (isLiveRef.current) endRequestRef.current?.();
+                  else void handleLogout();
+                }}
                 className={`p-2 rounded-md border transition-colors ${isDarkMode ? 'border-gray-700 hover:bg-gray-800 text-gray-400 hover:text-white' : 'border-gray-200 hover:bg-gray-100 text-gray-500 hover:text-black'}`}
                 aria-label="Logout"
-                title="Logout"
+                title={isLiveSession ? 'End interview to log out' : 'Logout'}
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -121,7 +142,7 @@ function App() {
             isLoading ? authLoading :
               !user ? <Navigate to="/login" replace /> :
                 !user.is_onboarded ? <Navigate to="/onboarding" replace /> :
-                  <div className="h-[calc(100vh-73px)]"><VoiceAgent isDarkMode={isDarkMode} onSessionEnded={() => navigate('/transcripts')} onLiveChange={setIsLiveSession} /></div>
+                  <div className="h-[calc(100vh-73px)]"><VoiceAgent isDarkMode={isDarkMode} onSessionEnded={() => navigate('/transcripts')} onLiveChange={setIsLiveSession} endRequestRef={endRequestRef} /></div>
           } />
           <Route path="/transcripts" element={
             isLoading ? authLoading : !user ? <Navigate to="/login" replace /> : <Transcripts isDarkMode={isDarkMode} />
