@@ -17,7 +17,7 @@ produces three structured insights plus an exportable markdown report.
 | Use case | Model |
 |---|---|
 | Nuanced judgment | `gemini-3.1-pro-preview` |
-| Straightforward extraction / formatting | `gemini-3-flash-preview` |
+| Straightforward extraction / formatting | `gemini-3.1-flash-lite` |
 
 ## Pipeline Shape
 
