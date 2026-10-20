@@ -1,4 +1,4 @@
-export type BadgeStatus = 'speaking' | 'listening' | 'muted' | 'connecting';
+export type BadgeStatus = 'speaking' | 'listening' | 'muted' | 'connecting' | 'joining';
 
 interface InterviewerBadgeProps {
   name: string;
@@ -10,6 +10,7 @@ const STATUS_COPY: Record<BadgeStatus, string> = {
   listening: 'Listening',
   muted: "You're muted",
   connecting: 'Connecting…',
+  joining: 'Joining…',
 };
 
 export function InterviewerBadge({ name, status }: InterviewerBadgeProps) {

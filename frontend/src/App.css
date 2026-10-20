@@ -878,7 +878,8 @@
 }
 
 .interviewer-badge__avatar--muted,
-.interviewer-badge__avatar--connecting {
+.interviewer-badge__avatar--connecting,
+.interviewer-badge__avatar--joining {
   border-color: rgba(156, 163, 175, 0.5);
 }
 

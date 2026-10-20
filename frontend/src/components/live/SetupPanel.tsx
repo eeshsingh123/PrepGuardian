@@ -13,6 +13,7 @@ interface SetupPanelProps {
   onTrackTypeChange: (type: string) => void;
   onDurationChange: (minutes: number) => void;
   checkingMic: boolean;
+  creatingSession: boolean;
   micProblem: MicProblem | null;
   setupNotice: string | null;
   onStart: () => void;
@@ -29,6 +30,7 @@ export function SetupPanel({
   onTrackTypeChange,
   onDurationChange,
   checkingMic,
+  creatingSession,
   micProblem,
   setupNotice,
   onStart,
@@ -38,7 +40,7 @@ export function SetupPanel({
   const tracks = options?.tracks ?? [];
   const selectedTrack = tracks.find((t) => t.type === trackType) ?? tracks[0];
   const interviewerName = options?.interviewer_name ?? '';
-  const canStart = !!options && options.tracks.length > 0 && !checkingMic;
+  const canStart = !!options && options.tracks.length > 0 && !checkingMic && !creatingSession;
 
   return (
     <div className={`live-setup ${theme}`}>
@@ -102,12 +104,12 @@ export function SetupPanel({
 
           <p className="live-setup__summary">
             {interviewerName} will run a {durationMinutes}-minute {selectedTrack.title} interview. Think out
-            loud like you would with a real interviewer. Share your screen when you want her to see your
-            diagram or code.
+            loud like you would with a real interviewer. Share your screen when you want {interviewerName} to
+            see your diagram or code.
           </p>
 
           <button type="button" className="live-setup__start" disabled={!canStart} onClick={onStart}>
-            {checkingMic ? 'Checking your microphone…' : 'Start interview'}
+            {checkingMic ? 'Checking your microphone…' : creatingSession ? 'Starting your interview…' : 'Start interview'}
           </button>
 
           {micProblem === 'denied' && (

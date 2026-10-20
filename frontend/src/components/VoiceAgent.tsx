@@ -29,6 +29,17 @@ export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange }: VoiceAg
         <span aria-live="polite" className="sr-only">
           {live.announcement?.text ?? ''}
         </span>
+        {live.banner && (
+          <ConnectionBanner
+            message={live.banner.message}
+            showRetry={live.banner.showRetry}
+            showSetup={live.banner.showSetup}
+            showTranscripts={live.banner.showTranscripts}
+            onRetry={() => live.retry()}
+            onSetup={live.backToSetup}
+            onTranscripts={live.goToTranscripts}
+          />
+        )}
         <SetupPanel
           options={live.options}
           optionsLoading={live.optionsLoading}
@@ -43,6 +54,7 @@ export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange }: VoiceAg
             live.resolvedChoice && live.setChoice({ ...live.resolvedChoice, durationMinutes })
           }
           checkingMic={live.checkingMic}
+          creatingSession={live.creatingSession}
           micProblem={live.micProblem}
           setupNotice={live.setupNotice}
           onStart={() => void live.start()}
@@ -53,7 +65,10 @@ export function VoiceAgent({ isDarkMode, onSessionEnded, onLiveChange }: VoiceAg
   }
 
   const badgeStatus: BadgeStatus =
-    live.phase !== 'live' ? 'connecting' : live.muted ? 'muted' : live.agentVoice === 'agent_speaking' ? 'speaking' : 'listening';
+    live.phase !== 'live' ? 'connecting'
+    : !live.joined ? 'joining'
+    : live.muted ? 'muted'
+    : live.agentVoice === 'agent_speaking' ? 'speaking' : 'listening';
   const orbState = live.phase !== 'live' ? 'disconnected' : live.agentVoice;
   const controlsDisabled = live.phase !== 'live' || live.banner?.kind === 'fatal';
 
