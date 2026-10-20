@@ -10,7 +10,7 @@ Output renders as a radar/spider chart with a market bar overlay.
 ```python
 radar_agent = LlmAgent(
     name="ConceptRadarAgent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite",
     instruction=RADAR_AGENT_PROMPT,
     output_key="radar_data"
 )
