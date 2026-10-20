@@ -112,7 +112,7 @@ export function useScreenShare({ previewVideoRef, onFrame, onStopped }: ScreenSh
           lastSentThumbRef.current = thumb;
           sendFullFrame();
         }
-      }, 1000);
+      }, 2000);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotAllowedError') return;
       logger.error('Error accessing screen share', err);

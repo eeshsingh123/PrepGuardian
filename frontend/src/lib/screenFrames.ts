@@ -1,6 +1,7 @@
-export const SCREEN_THUMB_WIDTH = 64;
-export const SCREEN_THUMB_HEIGHT = 36;
-export const SCREEN_CHANGE_THRESHOLD = 12;
+export const SCREEN_THUMB_WIDTH = 160;
+export const SCREEN_THUMB_HEIGHT = 90;
+export const SCREEN_PIXEL_DELTA = 24;
+export const SCREEN_CHANGED_FRACTION = 0.003;
 
 export function downsampleToGrayscale(
   rgba: Uint8ClampedArray,
@@ -35,5 +36,11 @@ export function meanAbsoluteDiff(a: number[], b: number[]): number {
 
 export function isScreenChanged(previous: number[] | null, next: number[]): boolean {
   if (previous === null) return true;
-  return meanAbsoluteDiff(previous, next) > SCREEN_CHANGE_THRESHOLD;
+  const length = Math.min(previous.length, next.length);
+  if (length === 0) return false;
+  let changed = 0;
+  for (let i = 0; i < length; i++) {
+    if (Math.abs(previous[i] - next[i]) > SCREEN_PIXEL_DELTA) changed++;
+  }
+  return changed / length > SCREEN_CHANGED_FRACTION;
 }
