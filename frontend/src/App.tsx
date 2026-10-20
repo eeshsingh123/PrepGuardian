@@ -11,6 +11,7 @@ import './App.css';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isLiveSession, setIsLiveSession] = useState(false);
   const { user, isLoading, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -58,8 +59,9 @@ function App() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            {/* Navigation links shown only when logged in and past onboarding */}
-            {user && !isAuthPage && !isOnboardingPage && (
+            {/* Navigation links shown only when logged in and past onboarding.
+                Hidden while a live interview runs so a click can't silently kill the session. */}
+            {user && !isAuthPage && !isOnboardingPage && !isLiveSession && (
               <>
                 <Link
                   to="/"
@@ -119,7 +121,7 @@ function App() {
             isLoading ? authLoading :
               !user ? <Navigate to="/login" replace /> :
                 !user.is_onboarded ? <Navigate to="/onboarding" replace /> :
-                  <div className="h-[calc(100vh-73px)]"><VoiceAgent isDarkMode={isDarkMode} onSessionEnded={() => navigate('/transcripts')} /></div>
+                  <div className="h-[calc(100vh-73px)]"><VoiceAgent isDarkMode={isDarkMode} onSessionEnded={() => navigate('/transcripts')} onLiveChange={setIsLiveSession} /></div>
           } />
           <Route path="/transcripts" element={
             isLoading ? authLoading : !user ? <Navigate to="/login" replace /> : <Transcripts isDarkMode={isDarkMode} />
