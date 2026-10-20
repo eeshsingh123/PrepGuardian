@@ -1,3 +1,6 @@
+from app.config import settings
+
+
 class AppConstants:
     APP_NAME = "prepguardian"
     AGENT_NAME = "prepguardian_agent"
@@ -9,14 +12,14 @@ class AppConstants:
 
 class InterviewerConstants:
     NAME = "Maya"
-    VOICE = "Kore"
+    VOICE = settings.LIVE_VOICE
 
 
 class ModelConstants:
-    AGENT_LIVE_MODEL = "gemini-live-2.5-flash-native-audio"
+    AGENT_LIVE_MODEL = settings.AGENT_LIVE_MODEL
 
-    INSIGHT_PRO_MODEL = "gemini-3.1-pro-preview"
-    INSIGHT_FLASH_MODEL = "gemini-3.1-flash-lite-preview"
+    INSIGHT_PRO_MODEL = settings.INSIGHT_PRO_MODEL
+    INSIGHT_FLASH_MODEL = settings.INSIGHT_FLASH_MODEL
 
 
 class AuthConstants:
