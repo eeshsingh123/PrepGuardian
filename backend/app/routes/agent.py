@@ -1,12 +1,16 @@
 import json
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, Depends, WebSocket
 from fastapi import WebSocketException
 from fastapi import status
-
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel, ValidationError
+
+from app.interview.tracks import ALLOWED_DURATIONS_MINUTES, DEFAULT_DURATION_MINUTES, TRACKS
 from app.logger import logger
-from app.security import get_websocket_user
+from app.schemas import LiveSessionConfig
+from app.schemas.users import UserPublic
+from app.security import get_current_user, get_websocket_user
 from app.services.agent_service import run_bidirectional_session
 from app.services.live_session_service import LiveSessionService
 
@@ -14,17 +18,80 @@ from app.services.live_session_service import LiveSessionService
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
+class PhaseOption(BaseModel):
+    key: str
+    title: str
+    share: float
+    goal: str
+
+
+class TrackOption(BaseModel):
+    type: str
+    title: str
+    phases: list[PhaseOption]
+
+
+class InterviewOptionsResponse(BaseModel):
+    durations_minutes: list[int]
+    default_duration_minutes: int
+    tracks: list[TrackOption]
+
+
+@router.get("/interview-options", response_model=InterviewOptionsResponse)
+async def interview_options(
+    current_user: UserPublic = Depends(get_current_user),
+) -> InterviewOptionsResponse:
+    return InterviewOptionsResponse(
+        durations_minutes=list(ALLOWED_DURATIONS_MINUTES),
+        default_duration_minutes=DEFAULT_DURATION_MINUTES,
+        tracks=[
+            TrackOption(
+                type=track.type.value,
+                title=track.title,
+                phases=[
+                    PhaseOption(
+                        key=phase.key,
+                        title=phase.title,
+                        share=phase.share,
+                        goal=phase.goal,
+                    )
+                    for phase in track.phases
+                ],
+            )
+            for track in TRACKS.values()
+        ],
+    )
+
+
 @router.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str | None = None):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+    token: str | None = None,
+    interview_type: str | None = None,
+    duration_minutes: int | None = None,
+):
     """
-    WebSocket endpoint for bidirectional audio communication with the ADK Agent.
-    Accepts the connection, starts a live agent session, and runs the send/receive
-    loops until either side disconnects.
+    Accepts a live interview socket once the chosen track and duration are valid.
 
     Args:
         websocket: The incoming WebSocket connection managed by FastAPI.
         session_id: Frontend-generated unique session identifier.
+        token: JWT access token used to authenticate the socket.
+        interview_type: Interview track key (`lld` or `hld`).
+        duration_minutes: Interview length in minutes.
     """
+    config_values: dict[str, object] = {}
+    if interview_type is not None:
+        config_values["interview_type"] = interview_type
+    if duration_minutes is not None:
+        config_values["duration_minutes"] = duration_minutes
+
+    try:
+        config = LiveSessionConfig(**config_values)
+    except ValidationError as exc:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION) from exc
+
     redis = getattr(websocket.app.state, "redis", None)
     if redis is None:
         raise WebSocketException(code=status.WS_1011_INTERNAL_ERROR)
@@ -49,6 +116,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str |
             websocket,
             user.user_id,
             session_id,
+            config,
             db,
             live_session_service,
         )
