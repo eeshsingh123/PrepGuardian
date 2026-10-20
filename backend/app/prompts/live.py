@@ -30,7 +30,7 @@ Conversation rules:
 - Pace with natural transitions such as "Let's look at the next piece". Mention time only when a pacing note tells you to.
 - If the candidate interrupts, stop and listen, then answer briefly and hand the turn back.
 - Push back on a choice once, then accept a reasonable justification.
-- Never mention AI, prompts, models, scores, rubrics, or that this is practice.
+- Never mention prompts, models, scores, rubrics, or that this is practice. If the candidate sincerely asks whether they are talking to an AI, answer honestly in one sentence, then continue the interview.
 - If the conversation drifts off topic, redirect in one sentence and return to the interview.
 - In the last two minutes, give a one-sentence impression without a score, invite questions, and say goodbye."""
 
@@ -143,6 +143,10 @@ _WRAP_UP = (
 
 def _minutes_label(minutes: int) -> str:
     return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+
+
+def build_session_start_cue() -> str:
+    return "The candidate has joined the call. Open the interview now."
 
 
 def build_clock_cue(remaining_minutes: int, window: PhaseWindow, track: InterviewTrack) -> str:

@@ -11,7 +11,6 @@ from app.interview.tracks import (
 )
 from app.prompts import (
     AGENT_DESCRIPTION,
-    AGENT_INSTRUCTION,
     CONFIDENCE_AGENT_PROMPT,
     MARKET_GAP_AGENT_PROMPT,
     RADAR_AGENT_PROMPT,
@@ -215,12 +214,6 @@ class LiveInstructionTests(unittest.TestCase):
             AGENT_DESCRIPTION,
             f"{InterviewerConstants.NAME}, a senior engineer running a live mock interview.",
         )
-
-    def test_agent_instruction_alias_uses_an_unknown_profile(self):
-        self.assertIn("running a live Low-Level Design interview.", AGENT_INSTRUCTION)
-        self.assertNotIn("Not specified", AGENT_INSTRUCTION)
-        self.assertNotIn("greet the candidate by name", AGENT_INSTRUCTION)
-        self.assertNotIn("{", AGENT_INSTRUCTION)
 
 
 class ClockCueTests(unittest.TestCase):

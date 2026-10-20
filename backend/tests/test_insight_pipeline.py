@@ -10,10 +10,14 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 from fastapi.websockets import WebSocketDisconnect
 
-from app.schemas import ConversationResponse, ConversationTurn
+from app.schemas import ConversationResponse, ConversationTurn, LiveSessionConfig
 from app.routes.conversations import generate_insights
 from app.services import insight_service
-from app.services.agent_service import client_to_agent_messaging, run_bidirectional_session
+from app.services.agent_service import (
+    MAX_CLIENT_FRAME_BYTES,
+    client_to_agent_messaging,
+    run_bidirectional_session,
+)
 from app.services.conversation_service import ConversationTracker
 
 
@@ -157,10 +161,11 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         saved_docs = []
 
         class FakeCollection:
-            async def insert_one(self, doc):
-                saved_docs.append(doc)
+            async def update_one(self, query, update, upsert=False):
+                saved_docs.append(update["$set"])
 
         fake_db = SimpleNamespace(conversations=FakeCollection())
+        config = LiveSessionConfig(duration_minutes=30)
 
         async def fake_agent_to_client_messaging(websocket, live_events, tracker):
             tracker.add_agent_turn("Start with requirements.")
@@ -172,7 +177,10 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
             def close(self):
                 return None
 
-        with patch("app.services.agent_service.start_agent_session", AsyncMock(return_value=(object(), FakeLiveRequestQueue()))), patch(
+        with patch(
+            "app.services.agent_service.start_agent_session",
+            AsyncMock(return_value=(object(), FakeLiveRequestQueue())),
+        ), patch(
             "app.services.agent_service.agent_to_client_messaging",
             side_effect=fake_agent_to_client_messaging,
         ), patch(
@@ -182,36 +190,38 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
             "app.services.agent_service.get_user",
             AsyncMock(),
         ) as get_user_mock:
-            await run_bidirectional_session(object(), "pg_user", "sess_live", fake_db)
+            await run_bidirectional_session(
+                object(),
+                "pg_user",
+                "sess_live",
+                config,
+                fake_db,
+            )
 
         self.assertEqual(len(saved_docs), 1)
-        self.assertIsNone(saved_docs[0]["confidence_data"])
-        self.assertIsNone(saved_docs[0]["radar_data"])
-        self.assertIsNone(saved_docs[0]["market_gap_data"])
-        self.assertIsNone(saved_docs[0]["report_text"])
+        self.assertIsNone(saved_docs[0].get("confidence_data"))
+        self.assertIsNone(saved_docs[0].get("radar_data"))
+        self.assertIsNone(saved_docs[0].get("market_gap_data"))
+        self.assertIsNone(saved_docs[0].get("report_text"))
         self.assertEqual(saved_docs[0]["ended_reason"], "websocket_closed")
+        self.assertEqual(saved_docs[0]["interview_type"], "lld")
+        self.assertEqual(saved_docs[0]["duration_minutes"], 30)
+        self.assertEqual(saved_docs[0]["usage"]["total_tokens"], 0)
         get_user_mock.assert_not_awaited()
 
-    async def test_session_control_warning_prompts_agent_without_recording_user_turn(self):
+    async def test_legacy_time_warning_is_ignored_and_session_end_stops_loop(self):
         class FakeWebSocket:
             def __init__(self):
                 self.messages = [
                     json.dumps({
                         "mime_type": "application/session-control",
-                        "event": "session_started",
-                        "time_limit_seconds": 2400,
-                    }),
-                    json.dumps({
-                        "mime_type": "application/session-control",
                         "event": "time_warning",
                         "seconds_remaining": 600,
-                        "time_limit_seconds": 2400,
                     }),
                     json.dumps({
                         "mime_type": "application/session-control",
                         "event": "session_ended",
                         "reason": "timer_expired",
-                        "time_limit_seconds": 2400,
                     }),
                 ]
 
@@ -224,13 +234,15 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.contents = []
 
-            def send_content(self, content):
+            def send_content(self, content, partial=False):
                 self.contents.append(content)
 
+        config = LiveSessionConfig(duration_minutes=45)
         tracker = ConversationTracker(
             session_id="sess_timer",
             user_id="pg_user",
             db=SimpleNamespace(),
+            config=config,
         )
         live_request_queue = FakeLiveRequestQueue()
 
@@ -241,23 +253,27 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(tracker.turns, [])
-        self.assertEqual(tracker.time_limit_seconds, 2400)
+        self.assertEqual(tracker.time_limit_seconds, 2700)
         self.assertEqual(tracker.ended_reason, "timer_expired")
-        self.assertEqual(len(live_request_queue.contents), 1)
-        self.assertIn("10 minutes remaining", live_request_queue.contents[0].parts[0].text)
+        self.assertEqual(live_request_queue.contents, [])
 
-    async def test_user_activity_time_context_updates_agent_without_transcript_turn(self):
+    async def test_audio_packet_ignores_legacy_time_context_and_forwards_canonical_pcm(self):
         class FakeWebSocket:
             def __init__(self):
                 self.messages = [
                     json.dumps({
-                        "mime_type": "audio/pcm",
+                        "mime_type": "audio/pcm;rate=48000",
                         "data": base64.b64encode(b"pcm").decode("ascii"),
                         "time_context": {
                             "elapsed_seconds": 120,
                             "remaining_seconds": 2280,
                             "time_limit_seconds": 2400,
                         },
+                    }),
+                    json.dumps({
+                        "mime_type": "application/session-control",
+                        "event": "session_ended",
+                        "reason": "user_ended",
                     }),
                 ]
 
@@ -271,7 +287,7 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 self.contents = []
                 self.realtime = []
 
-            def send_content(self, content):
+            def send_content(self, content, partial=False):
                 self.contents.append(content)
 
             def send_realtime(self, blob):
@@ -291,9 +307,73 @@ class LiveSessionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(tracker.turns, [])
-        self.assertEqual(len(live_request_queue.contents), 1)
+        self.assertEqual(live_request_queue.contents, [])
         self.assertEqual(len(live_request_queue.realtime), 1)
-        self.assertIn("2280 seconds remaining", live_request_queue.contents[0].parts[0].text)
+        self.assertEqual(
+            live_request_queue.realtime[0].mime_type,
+            "audio/pcm;rate=16000",
+        )
+
+    async def test_malformed_frames_are_ignored_without_ending_the_session(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.messages = [
+                    json.dumps(
+                        {
+                            "mime_type": "text/plain",
+                            "data": "x" * (MAX_CLIENT_FRAME_BYTES + 1),
+                        }
+                    ),
+                    "{not valid json",
+                    json.dumps(["not", "an", "object"]),
+                    json.dumps({
+                        "mime_type": "audio/pcm",
+                        "data": "%%%not-base64%%%",
+                    }),
+                    json.dumps({
+                        "mime_type": "audio/pcm",
+                        "data": base64.b64encode(b"pcm").decode("ascii"),
+                    }),
+                    json.dumps({
+                        "mime_type": "application/session-control",
+                        "event": "session_ended",
+                        "reason": "user_ended",
+                    }),
+                ]
+
+            async def receive_text(self):
+                if not self.messages:
+                    raise WebSocketDisconnect()
+                return self.messages.pop(0)
+
+        class FakeLiveRequestQueue:
+            def __init__(self):
+                self.contents = []
+                self.realtime = []
+
+            def send_content(self, content, partial=False):
+                self.contents.append(content)
+
+            def send_realtime(self, blob):
+                self.realtime.append(blob)
+
+        tracker = ConversationTracker(
+            session_id="sess_malformed",
+            user_id="pg_user",
+            db=SimpleNamespace(),
+        )
+        live_request_queue = FakeLiveRequestQueue()
+
+        await client_to_agent_messaging(
+            FakeWebSocket(),
+            live_request_queue,
+            tracker,
+        )
+
+        self.assertEqual(tracker.ended_reason, "user_ended")
+        self.assertEqual(tracker.turns, [])
+        self.assertEqual(live_request_queue.contents, [])
+        self.assertEqual(len(live_request_queue.realtime), 1)
 
 
 class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):

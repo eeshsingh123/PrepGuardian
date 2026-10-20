@@ -1,10 +1,25 @@
 import os
+from typing import Literal
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     APP_ENV: str = "development"
+
+    # Models
+    AGENT_LIVE_MODEL: str = "gemini-3.8-live"
+    INSIGHT_PRO_MODEL: str = "gemini-3.1-pro-preview"
+    INSIGHT_FLASH_MODEL: str = "gemini-3.1-flash-lite"
+
+    # Live interview tuning
+    LIVE_VOICE: str = "Charon"
+    LIVE_COMPRESSION_TRIGGER_TOKENS: int = 32000
+    LIVE_COMPRESSION_TARGET_TOKENS: int = 16000
+    LIVE_VAD_SILENCE_DURATION_MS: int = 1200
+    LIVE_VAD_END_OF_SPEECH_SENSITIVITY: Literal["LOW", "HIGH"] = "LOW"
+    LIVE_VAD_PREFIX_PADDING_MS: int = 20
 
     # MongoDB
     MONGO_URI: str = "mongodb://localhost:27017"
