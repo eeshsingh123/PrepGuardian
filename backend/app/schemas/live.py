@@ -8,11 +8,11 @@ from app.interview.tracks import (
 
 
 class CandidateContext(BaseModel):
-    name: str = "Not specified"
-    experience: str = "Not specified"
-    target_company: str = "Not specified"
-    target_level: str = "Not specified"
-    preferences: str = "Not specified"
+    name: str = ""
+    experience: str = ""
+    target_company: str = ""
+    target_level: str = ""
+    preferences: str = ""
 
 
 class LiveSessionConfig(BaseModel):

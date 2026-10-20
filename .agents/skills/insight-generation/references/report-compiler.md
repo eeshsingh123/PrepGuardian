@@ -12,7 +12,7 @@ Depends on `confidence_data`, `radar_data`, and `market_gap_data` — run last.
 ```python
 report_agent = LlmAgent(
     name="ReportCompilerAgent",
-    model="gemini-3-flash-preview",
+    model="gemini-3.1-flash-lite",
     instruction=REPORT_COMPILER_PROMPT,
     output_key="final_report"
 )
