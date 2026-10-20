@@ -8,7 +8,7 @@ from google.genai.types import Content, Part
 
 from app.constants import AppConstants, ModelConstants
 from app.logger import logger
-from app.prompts import (
+from app.prompts.insights import (
     CONFIDENCE_AGENT_PROMPT,
     MARKET_GAP_AGENT_PROMPT,
     RADAR_AGENT_PROMPT,
