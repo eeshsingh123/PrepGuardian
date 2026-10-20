@@ -34,8 +34,9 @@ class InterviewTrack:
     problems: str
     looking_for: str
     phases: tuple[Phase, ...]
+    examples: tuple[tuple[str, str], ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         total = sum(p.share for p in self.phases)
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"Phase shares for {self.type} must sum to 1.0, got {total}.")
@@ -84,6 +85,20 @@ LLD_TRACK = InterviewTrack(
         Phase("wrap_up", "Wrap-up", 0.05,
               "Short close and candidate questions."),
     ),
+    examples=(
+        (
+            "The lot has floors, spots, and tickets.",
+            "Mm-hm. Which of those changes when a car enters?",
+        ),
+        (
+            "I would put a mutex around the whole method.",
+            "What does it protect, and what happens when two cars arrive at once?",
+        ),
+        (
+            "Can I get a hint?",
+            "Think about what has to stay consistent when two reservations overlap.",
+        ),
+    ),
 )
 
 HLD_TRACK = InterviewTrack(
@@ -109,6 +124,20 @@ HLD_TRACK = InterviewTrack(
               probe="Ask what happens on retries, or when two writers update the same record."),
         Phase("wrap_up", "Wrap-up", 0.06,
               "Short close and candidate questions."),
+    ),
+    examples=(
+        (
+            "The shortener has a database, a cache, and a redirect service.",
+            "Mm-hm. Which one gets hit first when a link is opened?",
+        ),
+        (
+            "I would add a queue between booking and payment.",
+            "What happens if the payment worker processes the same booking twice?",
+        ),
+        (
+            "Can I get a hint?",
+            "Think about what has to stay consistent when two people try to book the last seat.",
+        ),
     ),
 )
 
