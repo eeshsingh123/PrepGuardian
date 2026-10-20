@@ -15,7 +15,7 @@ both with concurrency) and duration (30 / 45 / 60). Server owns the interview cl
 | Lead | `feature/live-interviewer-core` | `backend/pyproject.toml`, `backend/uv.lock`, `backend/app/interview/tracks.py`, `backend/app/schemas/live.py`, `backend/app/schemas/__init__.py`, `docs/**` |
 | @nia-1235 Dev 1 — live runtime | `dev1/live-core-runtime` | `backend/app/services/agent_service.py`, `backend/app/services/interview_session.py` (new: clock, tools, cue scheduler), `backend/app/routes/agent.py`, `backend/app/services/conversation_service.py`, `backend/app/schemas/conversations.py`, `backend/app/constants.py`, `backend/app/config.py`, `backend/tests/test_insight_pipeline.py`, `backend/tests/test_interview_session.py` (new), `backend/tests/test_live_session_service.py` |
 | @jem-6777 Dev 2 — persona & prompts | `dev2/live-core-persona` | `backend/app/prompts.py` (delete) → `backend/app/prompts/` package (new), `backend/app/services/insight_service.py` (import line only), `backend/tests/test_prompts.py` (new), `.agents/skills/insight-generation/**` (model names only) |
-| @flo-8972 Dev 3 — frontend | `dev3/live-core-frontend` | `frontend/src/components/VoiceAgent.tsx`, `frontend/src/components/live/**` (new), `frontend/src/lib/screenFrames.ts` (new), `frontend/src/lib/interviewOptions.ts` (new), `frontend/src/lib/api.ts` (add options call only), `frontend/src/App.css` (live-screen classes only) |
+| @flo-8972 Dev 3 — frontend | `dev3/live-core-frontend` | `frontend/src/components/VoiceAgent.tsx`, `frontend/src/components/live/**` (new), `frontend/src/lib/screenFrames.ts` (new), `frontend/src/lib/interviewOptions.ts` (new), `frontend/src/lib/api.ts` (add options call only), `frontend/src/App.css` (live-screen classes only), `frontend/src/components/ConfirmationModal.tsx` (a11y), `frontend/src/App.tsx` (guard nav while live) |
 
 Shared-file order: none — no file has two owners. `insight_service.py` import line is Dev 2's only.
 
@@ -55,6 +55,13 @@ The live instruction references these tools by exact name:
 `GET /agents/interview-options` (auth required) →
 `{"durations_minutes": [30,45,60], "default_duration_minutes": 45, "tracks": [{"type": "lld", "title": "Low-Level Design",
 "phases": [{"key", "title", "share", "goal"}]}]}` built from `TRACKS` (so a new track appears in the UI automatically).
+
+### Amendment A1 (after UX review; lead applies to Dev 1 branch at merge)
+- `session_clock` adds `elapsed_seconds: int` (server-computed). Client counts from frame arrival. `phase_index` is 0-based.
+- `GET /agents/interview-options` adds top-level `interviewer_name`. Frontend never hardcodes the name.
+- At 0:00 the client shows "Time's up" and sends `session_ended` (`reason: timer_expired`) after a 60 s grace; server does not auto-close.
+
+UX spec for Dev 3: `docs/ux/live-core-slice1.md`.
 
 ## Testing (after devs commit)
 
