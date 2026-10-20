@@ -64,6 +64,24 @@ The live instruction references these tools by exact name:
 
 UX spec for Dev 3: `docs/ux/live-core-slice1.md`.
 
+### Amendment A2 (after real Vertex smoke + Tester 1 round 1) — supersedes the C4 connect step
+Why: browser-chosen session ids let one user overwrite another's transcript (T1-D1), JWT in the WS URL lands in
+server logs (T1-D8), and Maya never spoke first.
+- `POST /agents/sessions` (auth) body `{"interview_type", "duration_minutes"}` → `201 {"session_id", "ticket", "expires_in": 30}`.
+  Server generates `session_id` (`sess_` + uuid4 hex). 422 invalid config; 409 `{"detail": "active_session"}` if the user
+  already has a live session. Ticket = single-use, 30 s, Redis `pg:ws-ticket:{ticket}` → `{user_id, session_id, interview_type, duration_minutes}`.
+- WS `GET /agents/ws?ticket=…` (no path id, no `token`, no config params). Invalid/expired/reused ticket → close 1008 before accept.
+- Server opens the interview: sends one non-partial start cue right after the first `session_clock` frame (Maya speaks first, ~10 s).
+- Transcript frames gain `"partial": bool` (chunks `true`, final full text `false`). Client: chunks build the live caption,
+  final replaces it. Server saves only final text.
+- Errors: server sends `{"error": "<code>"}` with `code ∈ {"agent_unavailable", "internal"}` (never raw exception text), then closes 1011.
+  Malformed client frames are ignored + logged, never fatal.
+- Server stop: at `duration + 60 s` the server sends `{"session_ended": {"reason": "time_limit"}}` and closes 1000. After the
+  client's `session_ended` the server saves and closes 1000 (normal end ≠ crash).
+- Limits: client frame ≤ 1 MB (else ignored + logged); notes ≤ 40 per session, ≤ 300 chars each; `ended_reason` limited to
+  `user_ended | timer_expired`; one live session per user.
+- Client UX: after `session_clock`, badge status "Joining…" until the first agent audio chunk.
+
 ## Testing (after devs commit)
 
 | Tester | Round 1 | Round 2 (swap) |
@@ -76,8 +94,16 @@ Final: both testers run the merged integration branch, incl. a real Vertex smoke
 ## Status
 - [x] Base contract committed (lead)
 - [x] UX direction received and forwarded (`docs/ux/live-core-slice1.md`)
-- [ ] Dev 2 committed (round 1 done; lead review fixes R1 in progress)
-- [ ] Dev 1 / Dev 3 committed
+- [x] Dev 2 committed (69ba79f, review fixes R1 done).
+- [x] Tester 2 (@dev-8041) round 1 on Dev 2: sign off with minor issues. D1 (ADK `{}` injection) neutralised by Dev 1's InstructionProvider (ADK bypasses injection for callables) — lead adds regression test. D2–D9 → Dev 2 fix round R2 (in progress); lent `schemas/live.py` for D2/D6.
+- [x] Dev 2 R2 fixes committed (0e9054f, 45 tests). Waiting for Tester 1 swap-round sign-off.
+- [x] Dev 1 R1 fixes committed (0f76c36, 36 tests): A1, phase-boundary cues with 30 s dedupe, blank profile state. `DEFAULT_TARGET_COMPANY/LEVEL` still used by `routes/conversations.py` → remove in insights task.
+- [x] Lead real-Vertex smoke on trial merge: 3.8 Live works; partial cues don't block replies; tools called. Found: no opener, repeat-after-tool-call, doubled transcripts, JWT in logs → Dev 1 R2 (in progress), then A2 rework R3.
+- [x] Tester 1 round 1 on Dev 1 (db9a665): BLOCKED — D1 cross-user overwrite (high), D2–D9 medium, D10–D15 low. Report: `docs/qa/live-core-runtime-round1.md` @ teo branch 4771680. → Dev 1 R3 with A2.
+- [ ] Tester 1 (@teo-2452) round 2 on Dev 2 (0e9054f) — in progress
+- [x] Dev 3 committed (e90811c): god-hook split into 6 focused hooks + orchestrator, beep removed. Follow-up for next frontend task: extract `useLiveSocket` from the 452-line orchestrator.
+- [ ] Tester 2 (@dev-8041) round 1 on Dev 3 — in progress (mock backend)
+- [ ] Dev 1 committed
 - [ ] Tester round 1 / round 2 sign-off
 - [ ] Merged one at a time, rebuilt after each
 - [ ] Live smoke on Vertex + usage numbers
