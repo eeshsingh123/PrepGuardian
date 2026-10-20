@@ -356,7 +356,7 @@ class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
             "app.routes.conversations.update_conversation_insights",
             AsyncMock(return_value=True),
         ) as update_mock:
-            response = await generate_insights("sess_route", SimpleNamespace(user_id="pg_user"))
+            response = await generate_insights("sess_route", SimpleNamespace(user_id="pg_user"), object())
 
         self.assertEqual(response, {"ok": True})
         self.assertEqual(run_pipeline_mock.await_args.kwargs["candidate_profile"]["target_company"], "Top Tech Company")
@@ -407,7 +407,7 @@ class GenerateInsightsRouteTests(unittest.IsolatedAsyncioTestCase):
             AsyncMock(),
         ) as update_mock:
             with self.assertRaises(HTTPException) as ctx:
-                await generate_insights("sess_route", SimpleNamespace(user_id="pg_user"))
+                await generate_insights("sess_route", SimpleNamespace(user_id="pg_user"), object())
 
         self.assertEqual(ctx.exception.status_code, 503)
         update_mock.assert_not_awaited()

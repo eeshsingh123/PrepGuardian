@@ -7,6 +7,11 @@ class AppConstants:
     DEFAULT_TARGET_LEVEL = "Mid-level"
 
 
+class InterviewerConstants:
+    NAME = "Maya"
+    VOICE = "Kore"
+
+
 class ModelConstants:
     AGENT_LIVE_MODEL = "gemini-live-2.5-flash-native-audio"
 
