@@ -145,6 +145,10 @@ def _minutes_label(minutes: int) -> str:
     return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
 
 
+def build_session_start_cue() -> str:
+    return "The candidate has joined the call. Open the interview now."
+
+
 def build_clock_cue(remaining_minutes: int, window: PhaseWindow, track: InterviewTrack) -> str:
     remaining = max(0, remaining_minutes)
     phase = window.phase
