@@ -3,12 +3,17 @@ import json
 import math
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import WebSocket
 from google.adk.agents import LiveRequestQueue
-from google.adk.tools import ToolContext
-from google.genai.types import Content, Part
+from google.adk.tools import FunctionTool, ToolContext
+from google.genai.types import (
+    Behavior,
+    Content,
+    FunctionResponseScheduling,
+    Part,
+)
 
 from app import prompts
 from app.interview.tracks import PhaseWindow, get_track
@@ -203,6 +208,43 @@ def save_interview_note(note: str, tool_context: ToolContext) -> dict[str, objec
     return {"saved": bool(cleaned_note), "note_count": len(notes)}
 
 
+class ScheduledFunctionTool(FunctionTool):
+    """
+    Function tool whose Live function response does not start a new spoken turn.
+
+    Args:
+        func: Tool callable exposed to the model.
+        response_scheduling: Live scheduling mode applied to the function response.
+    """
+
+    def __init__(
+        self,
+        func: Callable[..., Any],
+        *,
+        response_scheduling: FunctionResponseScheduling,
+    ) -> None:
+        super().__init__(func)
+        self.behavior = Behavior.NON_BLOCKING
+        self.response_scheduling = response_scheduling
+
+
+def build_interview_tools() -> list[ScheduledFunctionTool]:
+    """
+    Builds the interview tools. Status waits for the model to be idle and note
+    saving is silent, so a late function response does not trigger a second turn.
+    """
+    return [
+        ScheduledFunctionTool(
+            get_interview_status,
+            response_scheduling=FunctionResponseScheduling.WHEN_IDLE,
+        ),
+        ScheduledFunctionTool(
+            save_interview_note,
+            response_scheduling=FunctionResponseScheduling.SILENT,
+        ),
+    ]
+
+
 class CueScheduler:
     """
     Sends browser phase frames and silent model pacing cues at phase boundaries
@@ -230,6 +272,7 @@ class CueScheduler:
 
     async def run(self) -> None:
         await self.send_clock_frame()
+        self.send_start_cue()
         events = self.build_events()
         minute_cue_times = [
             at_seconds for at_seconds, kind in events if kind == "minute"
@@ -271,6 +314,16 @@ class CueScheduler:
 
     def remaining_minutes(self) -> int:
         return math.ceil(self.clock.remaining_seconds / 60)
+
+    def send_start_cue(self) -> None:
+        """Sends the non-partial opening cue so the interviewer speaks first."""
+        self.live_request_queue.send_content(
+            content=Content(
+                role="user",
+                parts=[Part.from_text(text=prompts.build_session_start_cue())],
+            ),
+            partial=False,
+        )
 
     async def wait_until(self, elapsed_seconds: int) -> None:
         while self.clock.elapsed_seconds < elapsed_seconds:

@@ -2,14 +2,19 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import WebSocketException
+from google.adk.flows.llm_flows.tools._agent_tools import mark_live_async_tools_non_blocking
+from google.adk.flows.llm_flows.tools._caller import _build_function_response_content
+from google.adk.models.llm_request import LlmRequest
+from google.genai import types
 from google.genai.types import Blob, Part
 
 from app import prompts
+from app.constants import RedisConstants
 from app.interview.tracks import InterviewType
-from app.routes.agent import interview_options, websocket_endpoint
+from app.routes.agent import interview_options, websocket_endpoint, websocket_ticket
 from app.schemas import LiveSessionConfig
 from app.services.agent_service import build_candidate_state, build_run_config
 from app.services.conversation_service import ConversationTracker
@@ -17,6 +22,7 @@ from app.services.interview_session import (
     CueScheduler,
     InterviewClock,
     build_clock_state,
+    build_interview_tools,
     candidate_context_from_state,
     get_interview_status,
     save_interview_note,
@@ -223,12 +229,19 @@ class CueSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         return websocket, live_request_queue
 
-    async def test_scheduler_sends_phase_frames_and_partial_phase_and_time_cues(self):
+    async def test_scheduler_sends_start_cue_then_phase_frames_and_partial_cues(self):
         websocket, live_request_queue = await self.run_scheduler(InterviewType.LLD)
 
-        self.assertTrue(all(partial for _, partial in live_request_queue.contents))
+        contents = live_request_queue.contents
+        self.assertEqual(len(contents), 9)
+        self.assertFalse(contents[0][1])
         self.assertEqual(
-            [content.parts[0].text for content, _ in live_request_queue.contents],
+            contents[0][0].parts[0].text,
+            prompts.build_session_start_cue(),
+        )
+        self.assertTrue(all(partial for _, partial in contents[1:]))
+        self.assertEqual(
+            [content.parts[0].text for content, _ in contents[1:]],
             [
                 "cue:27:entities",
                 "cue:24:class_design",
@@ -257,9 +270,16 @@ class CueSchedulerTests(unittest.IsolatedAsyncioTestCase):
     async def test_phase_cue_is_skipped_when_a_minute_cue_is_within_thirty_seconds(self):
         websocket, live_request_queue = await self.run_scheduler(InterviewType.HLD)
 
-        self.assertTrue(all(partial for _, partial in live_request_queue.contents))
+        contents = live_request_queue.contents
+        self.assertEqual(len(contents), 7)
+        self.assertFalse(contents[0][1])
         self.assertEqual(
-            [content.parts[0].text for content, _ in live_request_queue.contents],
+            contents[0][0].parts[0].text,
+            prompts.build_session_start_cue(),
+        )
+        self.assertTrue(all(partial for _, partial in contents[1:]))
+        self.assertEqual(
+            [content.parts[0].text for content, _ in contents[1:]],
             [
                 "cue:26:entities_api",
                 "cue:23:high_level_design",
@@ -276,41 +296,71 @@ class CueSchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(clock_frames[-1]["elapsed_seconds"], 1692)
 
 
-class MultiPartEventTests(unittest.IsolatedAsyncioTestCase):
-    async def test_agent_forwards_every_audio_part_and_records_usage(self):
+class TranscriptionEventTests(unittest.IsolatedAsyncioTestCase):
+    def build_event(
+        self,
+        *,
+        input_text: str | None = None,
+        output_text: str | None = None,
+        finished: bool = True,
+        partial: bool | None = None,
+        turn_complete: bool = False,
+        usage=None,
+        parts: list[Part] | None = None,
+    ):
+        return SimpleNamespace(
+            output_transcription=(
+                SimpleNamespace(text=output_text, finished=finished)
+                if output_text is not None
+                else None
+            ),
+            input_transcription=(
+                SimpleNamespace(text=input_text, finished=finished)
+                if input_text is not None
+                else None
+            ),
+            content=SimpleNamespace(parts=parts) if parts else None,
+            usage_metadata=usage,
+            partial=not finished if partial is None else partial,
+            turn_complete=turn_complete,
+            interrupted=False,
+        )
+
+    async def run_events(self, events):
         from app.services.agent_service import agent_to_client_messaging
 
-        event = SimpleNamespace(
-            output_transcription=SimpleNamespace(text="Hello there"),
-            input_transcription=SimpleNamespace(text="Hi"),
-            content=SimpleNamespace(
-                parts=[
-                    Part(inline_data=Blob(data=b"first", mime_type="audio/pcm")),
-                    Part(inline_data=Blob(data=b"second", mime_type="audio/pcm")),
-                    Part(text="partial text"),
-                ]
-            ),
-            usage_metadata=SimpleNamespace(
+        async def live_events():
+            for event in events:
+                yield event
+
+        websocket = FakeWebSocket()
+        tracker = ConversationTracker(
+            session_id="sess_transcript",
+            user_id="pg_user",
+            db=SimpleNamespace(),
+        )
+        await agent_to_client_messaging(websocket, live_events(), tracker)
+        return websocket, tracker
+
+    async def test_agent_forwards_every_audio_part_and_records_usage(self):
+        event = self.build_event(
+            input_text="Hi",
+            output_text="Hello there",
+            partial=True,
+            turn_complete=True,
+            usage=SimpleNamespace(
                 prompt_token_count=100,
                 candidates_token_count=20,
                 total_token_count=120,
             ),
-            partial=True,
-            turn_complete=True,
-            interrupted=False,
+            parts=[
+                Part(inline_data=Blob(data=b"first", mime_type="audio/pcm")),
+                Part(inline_data=Blob(data=b"second", mime_type="audio/pcm")),
+                Part(text="partial text"),
+            ],
         )
 
-        async def live_events():
-            yield event
-
-        websocket = FakeWebSocket()
-        tracker = ConversationTracker(
-            session_id="sess_multi",
-            user_id="pg_user",
-            db=SimpleNamespace(),
-        )
-
-        await agent_to_client_messaging(websocket, live_events(), tracker)
+        websocket, tracker = await self.run_events([event])
 
         audio_frames = [
             frame for frame in websocket.frames if frame.get("mime_type") == "audio/pcm"
@@ -323,7 +373,12 @@ class MultiPartEventTests(unittest.IsolatedAsyncioTestCase):
                 if frame.get("mime_type") == "text/plain"
             ],
             [
-                {"mime_type": "text/plain", "data": "Hello there", "is_transcript": True},
+                {
+                    "mime_type": "text/plain",
+                    "data": "Hello there",
+                    "is_transcript": True,
+                    "partial": False,
+                },
                 {"mime_type": "text/plain", "data": "partial text"},
             ],
         )
@@ -331,7 +386,71 @@ class MultiPartEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tracker.usage.response_tokens, 20)
         self.assertEqual(tracker.usage.total_tokens, 120)
         self.assertEqual(tracker.usage.turn_count, 1)
-        self.assertEqual([turn["role"] for turn in tracker.turns], ["user", "agent"])
+        self.assertEqual(
+            [(turn["role"], turn["text"]) for turn in tracker.turns],
+            [("user", "Hi"), ("agent", "Hello there")],
+        )
+
+    async def test_partial_transcription_chunks_are_forwarded_but_only_final_is_saved(self):
+        events = [
+            self.build_event(input_text="Hi", finished=True),
+            self.build_event(output_text="Hello", finished=False),
+            self.build_event(output_text=" there", finished=False),
+            self.build_event(output_text="Hello there", finished=True),
+            self.build_event(turn_complete=True),
+        ]
+
+        websocket, tracker = await self.run_events(events)
+
+        transcript_frames = [
+            frame
+            for frame in websocket.frames
+            if frame.get("is_transcript") is True
+        ]
+        self.assertEqual(
+            [(frame["data"], frame["partial"]) for frame in transcript_frames],
+            [("Hello", True), (" there", True), ("Hello there", False)],
+        )
+        self.assertEqual(
+            [(turn["role"], turn["text"]) for turn in tracker.turns],
+            [("user", "Hi"), ("agent", "Hello there")],
+        )
+
+    async def test_partial_agent_chunks_fall_back_to_concatenation(self):
+        events = [
+            self.build_event(output_text="Hello", finished=False),
+            self.build_event(output_text=" there", finished=False),
+            self.build_event(turn_complete=True),
+        ]
+
+        _, tracker = await self.run_events(events)
+
+        self.assertEqual(
+            [(turn["role"], turn["text"]) for turn in tracker.turns],
+            [("agent", "Hello there")],
+        )
+
+    async def test_partial_input_chunks_fall_back_to_concatenation(self):
+        events = [
+            self.build_event(input_text="Hi", finished=False),
+            self.build_event(input_text=" there", finished=False),
+            self.build_event(turn_complete=True),
+        ]
+
+        websocket, tracker = await self.run_events(events)
+
+        self.assertEqual(
+            [(turn["role"], turn["text"]) for turn in tracker.turns],
+            [("user", "Hi there")],
+        )
+        self.assertEqual(
+            [
+                frame
+                for frame in websocket.frames
+                if frame.get("is_transcript") is True
+            ],
+            [],
+        )
 
 
 class UsageAccumulationTests(unittest.TestCase):
@@ -372,6 +491,56 @@ class UsageAccumulationTests(unittest.TestCase):
         self.assertEqual(tracker.usage.turn_count, 2)
 
 
+class ToolSchedulingTests(unittest.TestCase):
+    def test_interview_tools_declare_non_blocking_and_set_scheduling(self):
+        tools = build_interview_tools()
+
+        self.assertEqual(
+            [tool.response_scheduling for tool in tools],
+            [
+                types.FunctionResponseScheduling.WHEN_IDLE,
+                types.FunctionResponseScheduling.SILENT,
+            ],
+        )
+        self.assertTrue(
+            all(tool.behavior is types.Behavior.NON_BLOCKING for tool in tools)
+        )
+
+        declarations = [tool._get_declaration() for tool in tools]
+        request = LlmRequest(
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(function_declarations=declarations)]
+            ),
+            tools_dict={tool.name: tool for tool in tools},
+        )
+        mark_live_async_tools_non_blocking(request)
+
+        self.assertTrue(
+            all(
+                declaration.behavior is types.Behavior.NON_BLOCKING
+                for declaration in declarations
+            )
+        )
+
+    def test_function_responses_carry_scheduling(self):
+        tools = build_interview_tools()
+        expected_scheduling = [
+            types.FunctionResponseScheduling.WHEN_IDLE,
+            types.FunctionResponseScheduling.SILENT,
+        ]
+
+        for tool, scheduling in zip(tools, expected_scheduling):
+            content = _build_function_response_content(
+                tool,
+                {"saved": True},
+                "call-1",
+            )
+            function_response = content.parts[0].function_response
+            self.assertIsNotNone(function_response)
+            self.assertEqual(function_response.scheduling, scheduling)
+            self.assertEqual(function_response.id, "call-1")
+
+
 class WebSocketConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_interview_config_closes_before_accept(self):
         for interview_type, duration_minutes in (
@@ -386,11 +555,83 @@ class WebSocketConfigTests(unittest.IsolatedAsyncioTestCase):
                     await websocket_endpoint(
                         object(),
                         "sess_invalid",
-                        token=None,
+                        ticket="ticket",
                         interview_type=interview_type,
                         duration_minutes=duration_minutes,
                     )
                 self.assertEqual(ctx.exception.code, 1008)
+
+    async def test_missing_or_invalid_ticket_closes_before_accept(self):
+        class EmptyRedis:
+            async def getdel(self, key):
+                return None
+
+        websocket = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(redis=EmptyRedis(), mongo_db=object())
+            )
+        )
+
+        for ticket in (None, "unknown"):
+            with self.subTest(ticket=ticket):
+                with self.assertRaises(WebSocketException) as ctx:
+                    await websocket_endpoint(
+                        websocket,
+                        "sess_ticket",
+                        ticket=ticket,
+                        interview_type="lld",
+                        duration_minutes=30,
+                    )
+                self.assertEqual(ctx.exception.code, 1008)
+
+    async def test_valid_ticket_opens_the_session_for_its_issuing_user(self):
+        class FakeRedis:
+            def __init__(self):
+                self.values = {"pg:ws-ticket:good-ticket": "pg_user"}
+                self.deleted = []
+
+            async def getdel(self, key):
+                return self.values.pop(key, None)
+
+            async def set(self, key, value, ex=None, nx=False):
+                self.values[key] = value
+                return True
+
+            async def delete(self, key):
+                self.deleted.append(key)
+                self.values.pop(key, None)
+                return 1
+
+        redis = FakeRedis()
+
+        class FakeWebSocket:
+            def __init__(self):
+                self.app = SimpleNamespace(
+                    state=SimpleNamespace(redis=redis, mongo_db=object())
+                )
+                self.accepted = False
+
+            async def accept(self):
+                self.accepted = True
+
+        websocket = FakeWebSocket()
+        with patch(
+            "app.routes.agent.run_bidirectional_session",
+            AsyncMock(),
+        ) as run_session:
+            await websocket_endpoint(
+                websocket,
+                "sess_valid",
+                ticket="good-ticket",
+                interview_type="hld",
+                duration_minutes=60,
+            )
+
+        self.assertTrue(websocket.accepted)
+        self.assertNotIn("pg:ws-ticket:good-ticket", redis.values)
+        self.assertEqual(run_session.await_args.args[1], "pg_user")
+        self.assertEqual(run_session.await_args.args[3].interview_type.value, "hld")
+        self.assertEqual(run_session.await_args.args[3].duration_minutes, 60)
 
 
 class InterviewOptionsRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -407,6 +648,32 @@ class InterviewOptionsRouteTests(unittest.IsolatedAsyncioTestCase):
             sum(phase.share for phase in options.tracks[0].phases),
             1.0,
         )
+
+
+class WsTicketRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ticket_endpoint_returns_ticket_and_ttl(self):
+        class FakeRedis:
+            def __init__(self):
+                self.values = {}
+                self.ttls = {}
+
+            async def set(self, key, value, ex=None):
+                self.values[key] = value
+                self.ttls[key] = ex
+                return True
+
+        redis = FakeRedis()
+
+        response = await websocket_ticket(
+            SimpleNamespace(user_id="pg_user"),
+            redis,
+        )
+
+        self.assertTrue(response.ticket)
+        self.assertEqual(response.expires_in, RedisConstants.WS_TICKET_TTL_SECONDS)
+        key = f"{RedisConstants.WS_TICKET_PREFIX}:{response.ticket}"
+        self.assertEqual(redis.values[key], "pg_user")
+        self.assertEqual(redis.ttls[key], RedisConstants.WS_TICKET_TTL_SECONDS)
 
 
 class LiveRunConfigTests(unittest.TestCase):

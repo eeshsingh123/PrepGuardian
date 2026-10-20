@@ -28,9 +28,8 @@ from app.services.interview_session import (
     CueScheduler,
     InterviewClock,
     build_clock_state,
+    build_interview_tools,
     candidate_context_from_state,
-    get_interview_status,
-    save_interview_note,
     session_config_from_state,
 )
 from app.services.live_session_service import LiveSessionService
@@ -61,7 +60,7 @@ root_agent = Agent(
     model=settings.AGENT_LIVE_MODEL,
     description=prompts.AGENT_DESCRIPTION,
     instruction=build_agent_instruction,
-    tools=[get_interview_status, save_interview_note],
+    tools=build_interview_tools(),
 )
 
 session_service = InMemorySessionService()
@@ -191,25 +190,37 @@ async def agent_to_client_messaging(
         live_events: Async generator of live events from the ADK runner.
         tracker: ConversationTracker that records transcript turns and usage.
     """
-    current_agent_transcript: list[str] = []
+    output_transcript_chunks: list[str] = []
+    input_transcript_chunks: list[str] = []
 
     try:
         async for event in live_events:
+            if event.input_transcription and event.input_transcription.text:
+                transcription = event.input_transcription
+                if transcription.finished:
+                    tracker.add_user_turn(transcription.text)
+                    input_transcript_chunks = []
+                else:
+                    input_transcript_chunks.append(transcription.text)
+
             if event.output_transcription and event.output_transcription.text:
-                transcript_text = event.output_transcription.text
+                transcription = event.output_transcription
+                is_final = bool(transcription.finished)
                 await websocket.send_text(
                     json.dumps(
                         {
                             "mime_type": "text/plain",
-                            "data": transcript_text,
+                            "data": transcription.text,
                             "is_transcript": True,
+                            "partial": not is_final,
                         }
                     )
                 )
-                current_agent_transcript.append(transcript_text)
-
-            if event.input_transcription and event.input_transcription.text:
-                tracker.add_user_turn(event.input_transcription.text)
+                if is_final:
+                    tracker.add_agent_turn(transcription.text)
+                    output_transcript_chunks = []
+                else:
+                    output_transcript_chunks.append(transcription.text)
 
             if event.content and event.content.parts:
                 for part in event.content.parts:
@@ -244,9 +255,12 @@ async def agent_to_client_messaging(
                 tracker.record_usage(event.usage_metadata)
 
             if event.turn_complete or event.interrupted:
-                if current_agent_transcript:
-                    tracker.add_agent_turn(" ".join(current_agent_transcript))
-                    current_agent_transcript = []
+                if output_transcript_chunks:
+                    tracker.add_agent_turn("".join(output_transcript_chunks))
+                    output_transcript_chunks = []
+                if input_transcript_chunks:
+                    tracker.add_user_turn("".join(input_transcript_chunks))
+                    input_transcript_chunks = []
                 if event.turn_complete:
                     tracker.record_model_turn()
                 await websocket.send_text(

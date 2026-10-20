@@ -36,4 +36,6 @@ class AuthConstants:
 class RedisConstants:
     ACTIVE_SESSION_PREFIX = "pg:live-session"
     REVOKED_ACCESS_TOKEN_PREFIX = "pg:revoked-access"
+    WS_TICKET_PREFIX = "pg:ws-ticket"
     ACTIVE_SESSION_TTL_SECONDS = 90
+    WS_TICKET_TTL_SECONDS = 30
