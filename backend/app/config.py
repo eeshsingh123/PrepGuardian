@@ -21,7 +21,11 @@ class Settings(BaseSettings):
     AUTH_COOKIE_SECURE: bool = False
     AUTH_COOKIE_SAMESITE: str = "lax"
     AUTH_COOKIE_DOMAIN: str | None = None
-    
+
+    # Vertex AI
+    GOOGLE_CLOUD_PROJECT: str | None = None
+    GOOGLE_CLOUD_LOCATION: str = "us-central1"
+
     # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
@@ -54,5 +58,6 @@ settings = Settings()
 # Pydantic settings only stores them in the Python object — we must explicitly
 # push them into the process environment so the SDK picks them up.
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
-os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("GOOGLE_CLOUD_PROJECT")
-os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
+os.environ["GOOGLE_CLOUD_LOCATION"] = settings.GOOGLE_CLOUD_LOCATION
+if settings.GOOGLE_CLOUD_PROJECT:
+    os.environ["GOOGLE_CLOUD_PROJECT"] = settings.GOOGLE_CLOUD_PROJECT
