@@ -58,6 +58,20 @@ git clone https://github.com/eeshsingh123/PrepGuardian.git
 cd PrepGuardian
 ```
 
+### ⚡ One-command start
+
+```bash
+cp backend/.env.example backend/.env   # fill in GOOGLE_CLOUD_PROJECT
+gcloud auth application-default login  # once, for Vertex AI
+npm run dev
+```
+
+`npm run dev` (repo root) installs missing dependencies, starts MongoDB/Redis via `docker compose`
+if they aren't already running (launching Docker Desktop on Windows if needed), then runs the backend
+on `:8000` and the frontend on `:5173`. `Ctrl+C` stops both.
+
+The manual steps below are kept for reference.
+
 ### 2. ⚙️ Backend Setup
 
 ```bash
