@@ -91,7 +91,12 @@ server logs (T1-D8), and Maya never spoke first.
 
 Final: both testers run the merged integration branch, incl. a real Vertex smoke session.
 
-## Status
+## Final status (2026-10-20)
+Merged into `feature/live-interviewer-core`: Dev 2 `0e9054f` → Dev 3 `4406159` → Dev 1 `9dc9986`. Backend 74 tests pass,
+frontend builds. Interviewer renamed to Aiden (voice Charon). Further QA paused at the owner's request; testing rules to be
+set by the owner. QA reports from both testers stay on their branches for later triage.
+
+## Status (history)
 - [x] Base contract committed (lead)
 - [x] UX direction received and forwarded (`docs/ux/live-core-slice1.md`)
 - [x] Dev 2 committed (69ba79f, review fixes R1 done).
