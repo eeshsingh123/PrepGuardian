@@ -156,6 +156,13 @@ export function useLiveSession({
     wsRef.current = null;
   }, [clearConnectTimeout]);
 
+  const teardownSession = useCallback(() => {
+    closeSocket();
+    stopMic();
+    stopShare(false);
+    stopPlayback();
+  }, [closeSocket, stopMic, stopShare, stopPlayback]);
+
   const doEnd = useCallback(
     (reason: SessionEndReason) => {
       if (endedRef.current) return;
@@ -165,16 +172,13 @@ export function useLiveSession({
           JSON.stringify({ mime_type: 'application/session-control', event: 'session_ended', reason }),
         );
       }
-      closeSocket();
-      stopMic();
-      stopShare(false);
-      stopPlayback();
+      teardownSession();
       setShowEndModal(false);
       phaseRef.current = 'ending';
       setPhase('ending');
       onSessionEndedRef.current?.();
     },
-    [closeSocket, stopMic, stopShare, stopPlayback],
+    [teardownSession],
   );
   const doEndRef = useRef(doEnd);
   useEffect(() => {
@@ -196,12 +200,9 @@ export function useLiveSession({
   const { receiveFrame, resetClock } = sessionClock;
 
   const goToTranscripts = useCallback(() => {
-    closeSocket();
-    stopMic();
-    stopShare(false);
-    stopPlayback();
+    teardownSession();
     navigate('/transcripts');
-  }, [closeSocket, stopMic, navigate, stopPlayback, stopShare]);
+  }, [navigate, teardownSession]);
 
   const markSpeaking = useCallback(() => {
     setAgentVoice('agent_speaking');
@@ -219,10 +220,7 @@ export function useLiveSession({
       }
       if (msg.error !== undefined) {
         logger.error('Agent error:', msg.error);
-        closeSocket();
-        stopMic();
-        stopShare(false);
-        stopPlayback();
+        teardownSession();
         setBanner({
           kind: 'fatal',
           message: 'The interview hit a problem and had to stop. Everything up to now is saved.',
@@ -272,7 +270,7 @@ export function useLiveSession({
         }, 300);
       }
     },
-    [clearConnectTimeout, closeSocket, goToTranscripts, markSpeaking, micMuted, stopMic, playChunk, stopPlayback, stopShare, receiveFrame],
+    [clearConnectTimeout, goToTranscripts, markSpeaking, micMuted, stopPlayback, playChunk, teardownSession, receiveFrame],
   );
   const handleServerMessageRef = useRef(handleServerMessage);
   useEffect(() => {
@@ -281,6 +279,7 @@ export function useLiveSession({
 
   const openSocket = useCallback(
     (ticket: string) => {
+      teardownSession();
       expectedCloseRef.current = false;
       endedRef.current = false;
       const ws = new WebSocket(`${wsBaseUrl()}/agents/ws?ticket=${encodeURIComponent(ticket)}`);
@@ -313,13 +312,12 @@ export function useLiveSession({
         }
       };
       ws.onclose = (event) => {
+        if (wsRef.current !== ws) return;
         clearConnectTimeout();
         if (expectedCloseRef.current || endedRef.current) return;
         if (event.code === 1000) return;
         if (!clockReceivedRef.current && event.code === 1008) {
-          closeSocket();
-          stopMic();
-          stopShare(false);
+          teardownSession();
           phaseRef.current = 'setup';
           setPhase('setup');
           setSetupNotice("That setup isn't valid anymore. Please choose again.");
@@ -336,9 +334,7 @@ export function useLiveSession({
           return;
         }
         if (phaseRef.current === 'live') {
-          stopMic();
-          stopShare(false);
-          stopPlayback();
+          teardownSession();
           setBanner({
             kind: 'connection',
             message: 'Connection lost. Everything up to now is saved.',
@@ -352,7 +348,7 @@ export function useLiveSession({
         logger.error('WebSocket error');
       };
     },
-    [clearConnectTimeout, closeSocket, stopMic, stopPlayback, stopShare, resetClock],
+    [clearConnectTimeout, resetClock, teardownSession],
   );
 
   const setChoice = useCallback((next: InterviewChoice) => {
@@ -409,22 +405,17 @@ export function useLiveSession({
   }, [start]);
 
   const cancelConnecting = useCallback(() => {
-    closeSocket();
-    stopMic();
-    stopShare(false);
+    teardownSession();
     phaseRef.current = 'setup';
     setPhase('setup');
-  }, [closeSocket, stopMic, stopShare]);
+  }, [teardownSession]);
 
   const backToSetup = useCallback(() => {
-    closeSocket();
-    stopMic();
-    stopShare(false);
-    stopPlayback();
+    teardownSession();
     setBanner(null);
     phaseRef.current = 'setup';
     setPhase('setup');
-  }, [closeSocket, stopMic, stopPlayback, stopShare]);
+  }, [teardownSession]);
 
   const requestEnd = useCallback(() => {
     if (phaseRef.current === 'connecting') {
