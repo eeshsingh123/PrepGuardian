@@ -1,10 +1,25 @@
 import os
+from typing import Literal
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     APP_ENV: str = "development"
+
+    # Models
+    AGENT_LIVE_MODEL: str = "gemini-3.8-live"
+    INSIGHT_PRO_MODEL: str = "gemini-3.1-pro-preview"
+    INSIGHT_FLASH_MODEL: str = "gemini-3.1-flash-lite"
+
+    # Live interview tuning
+    LIVE_VOICE: str = "Charon"
+    LIVE_COMPRESSION_TRIGGER_TOKENS: int = 32000
+    LIVE_COMPRESSION_TARGET_TOKENS: int = 16000
+    LIVE_VAD_SILENCE_DURATION_MS: int = 1200
+    LIVE_VAD_END_OF_SPEECH_SENSITIVITY: Literal["LOW", "HIGH"] = "LOW"
+    LIVE_VAD_PREFIX_PADDING_MS: int = 20
 
     # MongoDB
     MONGO_URI: str = "mongodb://localhost:27017"
@@ -21,7 +36,11 @@ class Settings(BaseSettings):
     AUTH_COOKIE_SECURE: bool = False
     AUTH_COOKIE_SAMESITE: str = "lax"
     AUTH_COOKIE_DOMAIN: str | None = None
-    
+
+    # Vertex AI
+    GOOGLE_CLOUD_PROJECT: str | None = None
+    GOOGLE_CLOUD_LOCATION: str = "us-central1"
+
     # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
@@ -54,5 +73,6 @@ settings = Settings()
 # Pydantic settings only stores them in the Python object — we must explicitly
 # push them into the process environment so the SDK picks them up.
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
-os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("GOOGLE_CLOUD_PROJECT")
-os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
+os.environ["GOOGLE_CLOUD_LOCATION"] = settings.GOOGLE_CLOUD_LOCATION
+if settings.GOOGLE_CLOUD_PROJECT:
+    os.environ["GOOGLE_CLOUD_PROJECT"] = settings.GOOGLE_CLOUD_PROJECT

@@ -18,16 +18,19 @@ from app.schemas.insights import (
     MarketGapDimension,
     RadarData,
 )
+from app.schemas.live import CandidateContext, LiveSessionConfig
 from app.schemas.users import OnboardingRequest, UserCreate, UserInDB, UserPublic
 
 __all__ = [
     "AuthSession",
+    "CandidateContext",
     "CandidateProfile",
     "ConfidenceData",
     "ConfidenceScore",
     "ConversationResponse",
     "ConversationSummaryResponse",
     "ConversationTurn",
+    "LiveSessionConfig",
     "LoginRequest",
     "MarketGapData",
     "MarketGapDimension",

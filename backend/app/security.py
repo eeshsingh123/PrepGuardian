@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, Header, WebSocketException, status
+from fastapi import Depends, Header
 from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from redis.asyncio import Redis
@@ -49,16 +49,3 @@ async def get_optional_authorization_token(
     if scheme.lower() != "bearer" or not token:
         return None
     return token
-
-
-async def get_websocket_user(
-    token: str | None,
-    db: AsyncIOMotorDatabase,
-    redis: Redis,
-) -> UserPublic:
-    if not token:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    try:
-        return await resolve_user_from_access_token(token, db, redis)
-    except Exception as exc:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION) from exc
